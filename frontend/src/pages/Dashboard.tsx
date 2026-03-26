@@ -1,42 +1,206 @@
+import { useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { useAssets } from "../hooks/useAssets";
+import { useAssetsWithHealth, useHealthUpdater } from "../hooks/useAssets";
 import { useBridges } from "../hooks/useBridges";
-import HealthScoreCard from "../components/HealthScoreCard";
+import { useWebSocket } from "../hooks/useWebSocket";
+import HealthScoreCard, {
+  HealthScoreCardSkeleton,
+} from "../components/HealthScoreCard";
 import BridgeStatusCard from "../components/BridgeStatusCard";
+import type {
+  AssetWithHealth,
+  SortField,
+  SortOrder,
+  FilterStatus,
+  HealthScore,
+} from "../types";
+
+function getHealthStatus(score: number | null): FilterStatus {
+  if (score === null) return "all";
+  if (score >= 80) return "healthy";
+  if (score >= 50) return "warning";
+  return "critical";
+}
+
+function sortAssets(
+  assets: AssetWithHealth[],
+  field: SortField,
+  order: SortOrder
+): AssetWithHealth[] {
+  return [...assets].sort((a, b) => {
+    let comparison = 0;
+    if (field === "symbol") {
+      comparison = a.symbol.localeCompare(b.symbol);
+    } else if (field === "score") {
+      const scoreA = a.health?.overallScore ?? -1;
+      const scoreB = b.health?.overallScore ?? -1;
+      comparison = scoreA - scoreB;
+    }
+    return order === "asc" ? comparison : -comparison;
+  });
+}
+
+function filterAssets(
+  assets: AssetWithHealth[],
+  status: FilterStatus
+): AssetWithHealth[] {
+  if (status === "all") return assets;
+  return assets.filter((asset) => {
+    const assetStatus = getHealthStatus(asset.health?.overallScore ?? null);
+    return assetStatus === status;
+  });
+}
 
 export default function Dashboard() {
-  const { data: assetsData, isLoading: assetsLoading } = useAssets();
+  const {
+    data: assetsData,
+    isLoading: assetsLoading,
+    error: assetsError,
+  } = useAssetsWithHealth();
   const { data: bridgesData, isLoading: bridgesLoading } = useBridges();
+  const { updateHealth } = useHealthUpdater();
+
+  const [sortField, setSortField] = useState<SortField>("score");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+
+  const handleHealthUpdate = useCallback(
+    (data: unknown) => {
+      const healthData = data as { channel: string } & HealthScore;
+      if (healthData.symbol) {
+        updateHealth(healthData);
+      }
+    },
+    [updateHealth]
+  );
+
+  useWebSocket("health-updates", handleHealthUpdate);
+
+  const processedAssets = useMemo(() => {
+    if (!assetsData) return [];
+    const filtered = filterAssets(assetsData, filterStatus);
+    return sortAssets(filtered, sortField, sortOrder);
+  }, [assetsData, filterStatus, sortField, sortOrder]);
+
+  const statusCounts = useMemo(() => {
+    if (!assetsData) return { healthy: 0, warning: 0, critical: 0 };
+    return assetsData.reduce(
+      (acc, asset) => {
+        const status = getHealthStatus(asset.health?.overallScore ?? null);
+        if (status !== "all") {
+          acc[status]++;
+        }
+        return acc;
+      },
+      { healthy: 0, warning: 0, critical: 0 }
+    );
+  }, [assetsData]);
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
+      <header>
         <h1 className="text-3xl font-bold text-white">Dashboard</h1>
         <p className="mt-2 text-stellar-text-secondary">
           Real-time monitoring of bridged assets on the Stellar network
         </p>
-      </div>
+      </header>
 
-      {/* Asset Health Overview */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">Asset Health</h2>
+      <section aria-labelledby="asset-health-heading">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h2 id="asset-health-heading" className="text-xl font-semibold text-white">
+            Asset Health
+          </h2>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <label htmlFor="filter-status" className="sr-only">
+                Filter by status
+              </label>
+              <select
+                id="filter-status"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
+                className="bg-stellar-card border border-stellar-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+              >
+                <option value="all">All Assets</option>
+                <option value="healthy">Healthy ({statusCounts.healthy})</option>
+                <option value="warning">Warning ({statusCounts.warning})</option>
+                <option value="critical">Critical ({statusCounts.critical})</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="sort-field" className="sr-only">
+                Sort by
+              </label>
+              <select
+                id="sort-field"
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value as SortField)}
+                className="bg-stellar-card border border-stellar-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+              >
+                <option value="score">Sort by Score</option>
+                <option value="symbol">Sort by Name</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+                className="bg-stellar-card border border-stellar-border rounded-lg px-3 py-2 text-sm text-white hover:bg-stellar-border focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+                aria-label={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
+              >
+                {sortOrder === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
+          </div>
         </div>
-        {assetsLoading ? (
-          <p className="text-stellar-text-secondary">Loading assets...</p>
-        ) : assetsData && assetsData.assets.length > 0 ? (
+
+        {assetsError ? (
+          <div
+            className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center"
+            role="alert"
+          >
+            <p className="text-red-400 font-medium">Failed to load asset data</p>
+            <p className="text-sm text-red-400/80 mt-1">
+              Please check your connection and try again.
+            </p>
+          </div>
+        ) : assetsLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {assetsData.assets.map((asset: { symbol: string }) => (
-              <Link key={asset.symbol} to={`/assets/${asset.symbol}`}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <HealthScoreCardSkeleton key={i} symbol={`Asset ${i}`} />
+            ))}
+          </div>
+        ) : processedAssets.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {processedAssets.map((asset) => (
+              <Link
+                key={asset.symbol}
+                to={`/assets/${asset.symbol}`}
+                className="block focus:outline-none focus:ring-2 focus:ring-stellar-blue rounded-lg"
+              >
                 <HealthScoreCard
                   symbol={asset.symbol}
-                  overallScore={null}
-                  factors={null}
-                  trend={null}
+                  name={asset.name}
+                  overallScore={asset.health?.overallScore ?? null}
+                  factors={asset.health?.factors ?? null}
+                  trend={asset.health?.trend ?? null}
                 />
               </Link>
             ))}
+          </div>
+        ) : filterStatus !== "all" ? (
+          <div className="bg-stellar-card border border-stellar-border rounded-lg p-8 text-center">
+            <p className="text-stellar-text-secondary">
+              No assets match the selected filter.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilterStatus("all")}
+              className="mt-3 text-sm text-stellar-blue hover:underline"
+            >
+              Clear filter
+            </button>
           </div>
         ) : (
           <div className="bg-stellar-card border border-stellar-border rounded-lg p-8 text-center">
@@ -48,10 +212,11 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* Bridge Status Overview */}
-      <section>
+      <section aria-labelledby="bridge-status-heading">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">Bridge Status</h2>
+          <h2 id="bridge-status-heading" className="text-xl font-semibold text-white">
+            Bridge Status
+          </h2>
           <Link
             to="/bridges"
             className="text-sm text-stellar-blue hover:underline"
@@ -60,7 +225,21 @@ export default function Dashboard() {
           </Link>
         </div>
         {bridgesLoading ? (
-          <p className="text-stellar-text-secondary">Loading bridges...</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+              >
+                <div className="h-6 w-32 bg-stellar-border rounded animate-pulse mb-4" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((j) => (
+                    <div key={j} className="h-4 bg-stellar-border rounded animate-pulse" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : bridgesData && bridgesData.bridges.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {bridgesData.bridges.map(

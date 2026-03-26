@@ -1,3 +1,5 @@
+import type { Asset, HealthScore, AssetWithHealth } from "../types";
+
 const API_BASE_URL = "/api/v1";
 
 async function fetchApi<T>(endpoint: string): Promise<T> {
@@ -12,9 +14,7 @@ async function fetchApi<T>(endpoint: string): Promise<T> {
 
 // Assets
 export function getAssets() {
-  return fetchApi<{ assets: Array<{ symbol: string; name: string }>; total: number }>(
-    "/assets"
-  );
+  return fetchApi<{ assets: Asset[]; total: number }>("/assets");
 }
 
 export function getAssetDetail(symbol: string) {
@@ -22,19 +22,20 @@ export function getAssetDetail(symbol: string) {
 }
 
 export function getAssetHealth(symbol: string) {
-  return fetchApi<{
-    symbol: string;
-    overallScore: number;
-    factors: {
-      liquidityDepth: number;
-      priceStability: number;
-      bridgeUptime: number;
-      reserveBacking: number;
-      volumeTrend: number;
-    };
-    trend: "improving" | "stable" | "deteriorating";
-    lastUpdated: string;
-  } | null>(`/assets/${symbol}/health`);
+  return fetchApi<HealthScore | null>(`/assets/${symbol}/health`);
+}
+
+export async function getAssetsWithHealth(): Promise<AssetWithHealth[]> {
+  const { assets } = await getAssets();
+  const healthPromises = assets.map(async (asset) => {
+    try {
+      const health = await getAssetHealth(asset.symbol);
+      return { ...asset, health };
+    } catch {
+      return { ...asset, health: null };
+    }
+  });
+  return Promise.all(healthPromises);
 }
 
 export function getAssetLiquidity(symbol: string) {

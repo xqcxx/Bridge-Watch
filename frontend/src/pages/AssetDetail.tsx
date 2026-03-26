@@ -1,4 +1,5 @@
 import { useParams } from "react-router-dom";
+import { useAssetHealth } from "../hooks/useAssets";
 import { usePrices } from "../hooks/usePrices";
 import HealthScoreCard from "../components/HealthScoreCard";
 import PriceChart from "../components/PriceChart";
@@ -6,6 +7,7 @@ import LiquidityDepthChart from "../components/LiquidityDepthChart";
 
 export default function AssetDetail() {
   const { symbol } = useParams<{ symbol: string }>();
+  const { data: healthData } = useAssetHealth(symbol ?? "");
   const { data: priceData, isLoading: priceLoading } = usePrices(symbol ?? "");
 
   if (!symbol) {
@@ -18,21 +20,19 @@ export default function AssetDetail() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
+      <header>
         <h1 className="text-3xl font-bold text-white">{symbol}</h1>
         <p className="mt-2 text-stellar-text-secondary">
           Detailed monitoring for {symbol} on the Stellar network
         </p>
-      </div>
+      </header>
 
-      {/* Health Score */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <HealthScoreCard
           symbol={symbol}
-          overallScore={null}
-          factors={null}
-          trend={null}
+          overallScore={healthData?.overallScore ?? null}
+          factors={healthData?.factors ?? null}
+          trend={healthData?.trend ?? null}
         />
         <div className="lg:col-span-2">
           <PriceChart
@@ -43,10 +43,8 @@ export default function AssetDetail() {
         </div>
       </div>
 
-      {/* Liquidity Depth */}
       <LiquidityDepthChart symbol={symbol} data={[]} isLoading={false} />
 
-      {/* Price Sources Table */}
       <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">
         <h3 className="text-lg font-semibold text-white mb-4">
           Price Sources

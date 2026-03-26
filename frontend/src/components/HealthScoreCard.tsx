@@ -1,86 +1,225 @@
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import type { HealthFactors, HealthStatus } from "../types";
+
 interface HealthScoreCardProps {
   symbol: string;
+  name?: string;
   overallScore: number | null;
-  factors: {
-    liquidityDepth: number;
-    priceStability: number;
-    bridgeUptime: number;
-    reserveBacking: number;
-    volumeTrend: number;
-  } | null;
+  factors: HealthFactors | null;
   trend: "improving" | "stable" | "deteriorating" | null;
+  compact?: boolean;
 }
 
-function getScoreColor(score: number): string {
-  if (score >= 80) return "text-green-400";
-  if (score >= 60) return "text-yellow-400";
-  if (score >= 40) return "text-orange-400";
-  return "text-red-400";
+const ASSET_ICONS: Record<string, string> = {
+  USDC: "$",
+  PYUSD: "$",
+  EURC: "€",
+  XLM: "✦",
+  FOBXX: "F",
+};
+
+function getHealthStatus(score: number): HealthStatus {
+  if (score >= 80) return "healthy";
+  if (score >= 50) return "warning";
+  return "critical";
 }
 
-function getTrendLabel(trend: string | null): string {
-  if (trend === "improving") return "Improving";
-  if (trend === "deteriorating") return "Deteriorating";
-  return "Stable";
-}
-
-export default function HealthScoreCard({
-  symbol,
-  overallScore,
-  factors,
-  trend,
-}: HealthScoreCardProps) {
-  if (overallScore === null || factors === null) {
-    return (
-      <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-white mb-2">{symbol} Health</h3>
-        <p className="text-stellar-text-secondary">No health data available</p>
-      </div>
-    );
+function getStatusColor(status: HealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "#22c55e";
+    case "warning":
+      return "#eab308";
+    case "critical":
+      return "#ef4444";
   }
+}
 
+function getStatusLabel(status: HealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "Healthy";
+    case "warning":
+      return "Warning";
+    case "critical":
+      return "Critical";
+  }
+}
+
+function getTrendIcon(trend: string | null): string {
+  if (trend === "improving") return "↑";
+  if (trend === "deteriorating") return "↓";
+  return "→";
+}
+
+function getTrendColor(trend: string | null): string {
+  if (trend === "improving") return "text-green-400";
+  if (trend === "deteriorating") return "text-red-400";
+  return "text-stellar-text-secondary";
+}
+
+const FACTOR_LABELS: Record<keyof HealthFactors, string> = {
+  liquidityDepth: "Liquidity",
+  priceStability: "Price Stability",
+  bridgeUptime: "Bridge Uptime",
+  reserveBacking: "Reserve Backing",
+  volumeTrend: "Volume Trend",
+};
+
+function HealthScoreCardSkeleton({ symbol }: { symbol: string }) {
   return (
-    <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">{symbol} Health</h3>
-        <span className="text-sm text-stellar-text-secondary">
-          {getTrendLabel(trend)}
-        </span>
+    <div
+      className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+      role="article"
+      aria-label={`Loading health data for ${symbol}`}
+    >
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-full bg-stellar-border animate-pulse" />
+        <div className="flex-1">
+          <div className="h-5 w-16 bg-stellar-border rounded animate-pulse" />
+          <div className="h-4 w-24 bg-stellar-border rounded animate-pulse mt-1" />
+        </div>
       </div>
-
-      <div className="text-center mb-6">
-        <span className={`text-5xl font-bold ${getScoreColor(overallScore)}`}>
-          {overallScore}
-        </span>
-        <span className="text-stellar-text-secondary text-sm ml-1">/100</span>
+      <div className="flex justify-center mb-4">
+        <div className="w-28 h-28 rounded-full bg-stellar-border animate-pulse" />
       </div>
-
       <div className="space-y-3">
-        {Object.entries(factors).map(([key, value]) => (
-          <div key={key} className="flex items-center justify-between">
-            <span className="text-sm text-stellar-text-secondary capitalize">
-              {key.replace(/([A-Z])/g, " $1").trim()}
-            </span>
-            <div className="flex items-center space-x-2">
-              <div className="w-24 h-2 bg-stellar-border rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    value >= 80
-                      ? "bg-green-400"
-                      : value >= 60
-                        ? "bg-yellow-400"
-                        : value >= 40
-                          ? "bg-orange-400"
-                          : "bg-red-400"
-                  }`}
-                  style={{ width: `${value}%` }}
-                />
-              </div>
-              <span className="text-sm text-white w-8 text-right">{value}</span>
-            </div>
-          </div>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-4 bg-stellar-border rounded animate-pulse" />
         ))}
       </div>
     </div>
   );
 }
+
+export default function HealthScoreCard({
+  symbol,
+  name,
+  overallScore,
+  factors,
+  trend,
+  compact = false,
+}: HealthScoreCardProps) {
+  if (overallScore === null || factors === null) {
+    return <HealthScoreCardSkeleton symbol={symbol} />;
+  }
+
+  const status = getHealthStatus(overallScore);
+  const statusColor = getStatusColor(status);
+  const pieData = [
+    { name: "score", value: overallScore },
+    { name: "remaining", value: 100 - overallScore },
+  ];
+
+  return (
+    <div
+      className="bg-stellar-card border border-stellar-border rounded-lg p-6 hover:border-stellar-blue transition-colors"
+      role="article"
+      aria-label={`${symbol} health score: ${overallScore} out of 100, status ${getStatusLabel(status)}`}
+    >
+      <div className="flex items-center gap-3 mb-4">
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold"
+          style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
+          aria-hidden="true"
+        >
+          {ASSET_ICONS[symbol] || symbol.charAt(0)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-lg font-semibold text-white truncate">{symbol}</h3>
+          {name && (
+            <p className="text-sm text-stellar-text-secondary truncate">{name}</p>
+          )}
+        </div>
+        <div
+          className="px-2.5 py-1 rounded-full text-xs font-medium"
+          style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
+          role="status"
+          aria-label={`Status: ${getStatusLabel(status)}`}
+        >
+          {getStatusLabel(status)}
+        </div>
+      </div>
+
+      <div className="flex justify-center mb-4">
+        <div className="relative w-28 h-28">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={38}
+                outerRadius={50}
+                startAngle={90}
+                endAngle={-270}
+                dataKey="value"
+                stroke="none"
+              >
+                <Cell fill={statusColor} />
+                <Cell fill="#1E2340" />
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span
+              className="text-3xl font-bold text-white"
+              aria-hidden="true"
+            >
+              {overallScore}
+            </span>
+            <span
+              className={`text-sm flex items-center gap-0.5 ${getTrendColor(trend)}`}
+              aria-label={`Trend: ${trend || "stable"}`}
+            >
+              <span aria-hidden="true">{getTrendIcon(trend)}</span>
+              <span className="sr-only">{trend || "stable"}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {!compact && (
+        <div className="space-y-2.5" role="list" aria-label="Health factors">
+          {(Object.entries(factors) as [keyof HealthFactors, number][]).map(
+            ([key, value]) => {
+              const factorStatus = getHealthStatus(value);
+              const factorColor = getStatusColor(factorStatus);
+              return (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-2"
+                  role="listitem"
+                  aria-label={`${FACTOR_LABELS[key]}: ${value} out of 100`}
+                >
+                  <span className="text-sm text-stellar-text-secondary flex-shrink-0">
+                    {FACTOR_LABELS[key]}
+                  </span>
+                  <div className="flex items-center gap-2 flex-1 justify-end">
+                    <div
+                      className="w-20 h-1.5 bg-stellar-border rounded-full overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={value}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{ width: `${value}%`, backgroundColor: factorColor }}
+                      />
+                    </div>
+                    <span className="text-sm text-white w-7 text-right tabular-nums">
+                      {value}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export { HealthScoreCardSkeleton };
