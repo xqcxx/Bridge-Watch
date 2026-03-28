@@ -1,5 +1,8 @@
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { SkeletonText } from "./Skeleton";
+import NotificationCenter from "./NotificationCenter";
+import { useNotificationContext } from "../context/NotificationContext";
 
 const navLinks = [
   { to: "/dashboard", label: "Dashboard" },
@@ -15,6 +18,19 @@ interface NavbarProps {
 
 export default function Navbar({ isLoading = false }: NavbarProps) {
   const location = useLocation();
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const { unreadCount } = useNotificationContext();
+  const navRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) {
+        setIsNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (isLoading) {
     return (
@@ -32,7 +48,7 @@ export default function Navbar({ isLoading = false }: NavbarProps) {
   }
 
   return (
-    <nav className="border-b border-stellar-border bg-stellar-card" aria-label="Primary">
+    <nav className="border-b border-stellar-border bg-stellar-card sticky top-0 z-50" aria-label="Primary" ref={navRef}>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-stellar-card focus:px-3 focus:py-2 focus:text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue"
@@ -66,11 +82,45 @@ export default function Navbar({ isLoading = false }: NavbarProps) {
               ))}
             </div>
           </div>
-          <div className="text-sm text-stellar-text-secondary">
-            Stellar Network Monitor
+
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <button
+                onClick={() => setIsNotifOpen(!isNotifOpen)}
+                className={`p-2 rounded-full transition-colors relative focus:outline-none focus:ring-2 focus:ring-stellar-blue ${
+                  isNotifOpen ? "bg-stellar-dark text-white" : "text-stellar-text-secondary hover:text-white"
+                }`}
+                aria-label={`${unreadCount} notifications`}
+                aria-expanded={isNotifOpen}
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                  />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 block h-4 w-4 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center border-2 border-stellar-card">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+              
+              <NotificationCenter
+                isOpen={isNotifOpen}
+                onClose={() => setIsNotifOpen(false)}
+              />
+            </div>
+
+            <div className="hidden sm:block text-sm text-stellar-text-secondary border-l border-stellar-border pl-4">
+              Stellar Network Monitor
+            </div>
           </div>
         </div>
       </div>
     </nav>
   );
 }
+
