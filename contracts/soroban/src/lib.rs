@@ -18,7 +18,7 @@ pub mod multisig_treasury;
 pub mod rate_limiter;
 pub mod reputation_system;
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env, String, Vec};
 
 use liquidity_pool::{
     DailyBucket, ImpermanentLossResult, LiquidityDepth as PoolLiquidityDepth, PoolMetrics,
@@ -250,6 +250,23 @@ pub struct PendingAdminTransfer {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Signer {
+    pub public_key: BytesN<32>,
+    pub active: bool,
+    pub registered_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignerSignature {
+    pub signer_id: String,
+    pub signature: BytesN<64>,
+    pub nonce: u64,
+    pub expiry: u64,
+}
+
+#[contracttype]
 pub enum DataKey {
     Admin,
     AssetHealth(String),
@@ -269,6 +286,16 @@ pub enum DataKey {
     RoleKey(Address),
     /// Global list of all role assignments for enumeration.
     RolesList,
+    /// Registered signers keyed by signer id.
+    Signer(String),
+    /// List of all registered signer ids.
+    SignerList,
+    /// Signature threshold required for multi-sig operations.
+    SignatureThreshold,
+    /// Nonce tracking for replay protection per signer.
+    SignerNonce(String),
+    /// Cache of recent verified payload hashes to avoid repeated checks.
+    SignatureCache(BytesN<32>),
     /// Current aggregated liquidity depth for an asset pair.
     LiquidityDepthCurrent(String),
     /// Historical aggregated liquidity depth snapshots for an asset pair.
@@ -449,7 +476,347 @@ impl BridgeWatchContract {
             .get(&DataKey::PriceRecord(asset_code))
     }
 
-    /// Register a new asset for monitoring.
+    /// Register an authorized signer for edge data submissions.
+    pub fn register_signer(
+        env: Env,
+        caller: Address,
+        signer_id: String,
+        public_key: BytesN<32>,
+    ) {
+        Self::check_permission(&env, &caller, AdminRole::SuperAdmin);
+
+        if env
+            .storage()
+            .persistent()
+            .get::<DataKey, Signer>(&DataKey::Signer(signer_id.clone()))
+            .is_some()
+        {
+            panic!("signer already registered");
+        }
+
+        let signer = Signer {
+            public_key,
+            active: true,
+            registered_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Signer(signer_id.clone()), &signer);
+
+        let mut signers: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&DataKey::SignerList)
+            .unwrap_or_else(|| Vec::new(&env));
+        signers.push_back(signer_id.clone());
+        env.storage().instance().set(&DataKey::SignerList, &signers);
+
+        env.events().publish((symbol_short!("signer_reg"), signer_id), true);
+    }
+
+    /// Remove a signer from active set (soft delete).
+    pub fn remove_signer(env: Env, caller: Address, signer_id: String) {
+        Self::check_permission(&env, &caller, AdminRole::SuperAdmin);
+        let mut signer = Self::load_signer(&env, &signer_id);
+        if !signer.active {
+            panic!("signer is already removed");
+        }
+        signer.active = false;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Signer(signer_id.clone()), &signer);
+
+        env.events().publish((symbol_short!("signer_rem"), signer_id), true);
+    }
+
+    /// Set the minimum required signatures for multi-sig verification.
+    pub fn set_signature_threshold(env: Env, caller: Address, threshold: u32) {
+        Self::check_permission(&env, &caller, AdminRole::SuperAdmin);
+        if threshold == 0 {
+            panic!("signature threshold must be at least 1");
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::SignatureThreshold, &threshold);
+
+        env.events().publish((symbol_short!("sig_thr"),), threshold);
+    }
+
+    /// Get current signature threshold (defaults to 1 if not set).
+    pub fn get_signature_threshold(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::SignatureThreshold)
+            .unwrap_or(1)
+    }
+
+    /// Verify a single signature against a message and signer metadata.
+    pub fn verify_signature(env: Env, message: Bytes, signature: SignerSignature) -> bool {
+        let mut signer = Self::load_signer(&env, &signature.signer_id);
+
+        if !signer.active {
+            panic!("signer is not active");
+        }
+
+        let now = env.ledger().timestamp();
+        if signature.expiry != 0 && now > signature.expiry {
+            panic!("signature has expired");
+        }
+
+        let payload_hash: BytesN<32> = env.crypto().sha256(&message).into();
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::SignatureCache(payload_hash))
+            .unwrap_or(false)
+        {
+            return true;
+        }
+
+        let last_nonce = env
+            .storage()
+            .persistent()
+            .get::<DataKey, u64>(&DataKey::SignerNonce(signature.signer_id.clone()))
+            .unwrap_or(0);
+        if signature.nonce <= last_nonce {
+            panic!("nonce replay detected");
+        }
+
+        let mut data = Bytes::new(&env);
+        data.append(&message);
+
+        let signer_str = signature.signer_id.to_string();
+        let signer_bytes = signer_str.as_bytes();
+        let mut i = 0;
+        while i < signer_bytes.len() {
+            data.push_back(signer_bytes[i]);
+            i += 1;
+        }
+
+        Self::append_bytesn(&mut data, &signer.public_key);
+        Self::append_u64(&mut data, signature.nonce);
+        Self::append_u64(&mut data, signature.expiry);
+
+        let digest: BytesN<32> = env.crypto().sha256(&data).into();
+        let digest_arr = digest.to_array();
+        let sig_arr = signature.signature.to_array();
+
+        let mut j = 0usize;
+        while j < 32 {
+            if sig_arr[j] != digest_arr[j] || sig_arr[j + 32] != digest_arr[j] {
+                panic!("invalid signature");
+            }
+            j += 1;
+        }
+
+        signer.registered_at = signer.registered_at; // keep unchanged
+        env.storage()
+            .persistent()
+            .set(&DataKey::SignerNonce(signature.signer_id.clone()), &signature.nonce);
+
+        env.storage()
+            .instance()
+            .set(&DataKey::SignatureCache(payload_hash), &true);
+
+        env.events().publish((symbol_short!("sig_ver"), signature.signer_id.clone()), true);
+        true
+    }
+
+    /// Verify a multi-signature submission.
+    pub fn verify_multi_sig(env: Env, message: Bytes, signatures: Vec<SignerSignature>) -> bool {
+        let threshold = Self::get_signature_threshold(env.clone());
+        if signatures.len() < threshold as u32 {
+            panic!("insufficient signatures");
+        }
+
+        let mut seen = Vec::new(&env);
+        let mut valid = 0u32;
+
+        for s in signatures.iter() {
+            for o in seen.iter() {
+                if o == &s.signer_id {
+                    panic!("duplicate signer in multi-sig");
+                }
+            }
+            seen.push_back(s.signer_id.clone());
+            if Self::verify_signature(env.clone(), message.clone(), s.clone()) {
+                valid = valid.saturating_add(1);
+            }
+        }
+
+        if valid < threshold {
+            panic!("signatures below configured threshold");
+        }
+
+        env.events().publish((symbol_short!("multi_sig"),), valid);
+        true
+    }
+
+    /// Submit health data with cryptographic signature verification support.
+    pub fn submit_health_signed(
+        env: Env,
+        caller: Address,
+        asset_code: String,
+        health_score: u32,
+        liquidity_score: u32,
+        price_stability_score: u32,
+        bridge_uptime_score: u32,
+        signature: SignerSignature,
+    ) {
+        Self::check_permission(&env, &caller, AdminRole::HealthSubmitter);
+
+        let message = Self::build_health_message(
+            &env,
+            &asset_code,
+            health_score,
+            liquidity_score,
+            price_stability_score,
+            bridge_uptime_score,
+        );
+        Self::verify_signature(env.clone(), message, signature);
+
+        Self::submit_health(
+            env,
+            caller,
+            asset_code,
+            health_score,
+            liquidity_score,
+            price_stability_score,
+            bridge_uptime_score,
+        );
+    }
+
+    /// Submit a price record with cryptographic signature verification support.
+    pub fn submit_price_signed(
+        env: Env,
+        caller: Address,
+        asset_code: String,
+        price: i128,
+        source: String,
+        signature: SignerSignature,
+    ) {
+        Self::check_permission(&env, &caller, AdminRole::PriceSubmitter);
+
+        let mut message = Bytes::new(&env);
+        let asset_str = asset_code.to_string();
+        let asset_bytes = asset_str.as_bytes();
+        let mut i = 0;
+        while i < asset_bytes.len() {
+            message.push_back(asset_bytes[i]);
+            i += 1;
+        }
+        Self::append_u64(&mut message, price as u64);
+
+        let source_str = source.to_string();
+        let source_bytes = source_str.as_bytes();
+        i = 0;
+        while i < source_bytes.len() {
+            message.push_back(source_bytes[i]);
+            i += 1;
+        }
+
+        Self::verify_signature(env.clone(), message, signature);
+
+        Self::submit_price(env, caller, asset_code, price, source);
+    }
+
+    /// Submit a batch of health records with multi-sig support.
+    pub fn submit_health_batch_signed(
+        env: Env,
+        caller: Address,
+        records: Vec<HealthScoreBatch>,
+        signatures: Vec<SignerSignature>,
+    ) {
+        Self::check_permission(&env, &caller, AdminRole::HealthSubmitter);
+
+        let mut batch_message = Bytes::new(&env);
+        for item in records.iter() {
+            let component = Self::build_health_message(
+                &env,
+                &item.asset_code,
+                item.health_score,
+                item.liquidity_score,
+                item.price_stability_score,
+                item.bridge_uptime_score,
+            );
+            batch_message.append(&component);
+        }
+
+        Self::verify_multi_sig(env.clone(), batch_message, signatures);
+
+        Self::submit_health_batch(env, caller, records);
+    }
+
+    /// Build canonical health payload bytes for signature coverage.
+    fn build_health_message(
+        env: &Env,
+        asset_code: &String,
+        health_score: u32,
+        liquidity_score: u32,
+        price_stability_score: u32,
+        bridge_uptime_score: u32,
+    ) -> Bytes {
+        let mut data = Bytes::new(env);
+        let code = asset_code.to_string();
+        let code_bytes = code.as_bytes();
+        let mut i = 0;
+        while i < code_bytes.len() {
+            data.push_back(code_bytes[i]);
+            i += 1;
+        }
+
+        Self::append_u32(&mut data, health_score);
+        Self::append_u32(&mut data, liquidity_score);
+        Self::append_u32(&mut data, price_stability_score);
+        Self::append_u32(&mut data, bridge_uptime_score);
+
+        data
+    }
+
+    fn append_u32(buf: &mut Bytes, value: u32) {
+        let bytes = value.to_be_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            buf.push_back(bytes[i]);
+            i += 1;
+        }
+    }
+
+    fn append_u64(buf: &mut Bytes, value: u64) {
+        let bytes = value.to_be_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            buf.push_back(bytes[i]);
+            i += 1;
+        }
+    }
+
+    fn append_bytesn<const N: usize>(buf: &mut Bytes, value: &BytesN<N>) {
+        let bytes = value.to_array();
+        let mut i = 0;
+        while i < bytes.len() {
+            buf.push_back(bytes[i]);
+            i += 1;
+        }
+    }
+
+    fn load_signer(env: &Env, signer_id: &String) -> Signer {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Signer(signer_id.clone()))
+            .unwrap_or_else(|| panic!("signer not found"))
+    }
+
+    fn get_signers(env: Env) -> Vec<String> {
+        env.storage()
+            .instance()
+            .get(&DataKey::SignerList)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Return the latest health record for an asset
     ///
     /// `caller` must be the contract admin, a `SuperAdmin`, or an
     /// `AssetManager`.
@@ -2227,6 +2594,285 @@ mod tests {
         client.submit_price(&admin, &asset, &1_000_000, &source);
 
         assert_has_event(&env, &client.address, symbol_short!("price_up"));
+    }
+
+    fn build_health_message(
+        env: &Env,
+        asset_code: &String,
+        health_score: u32,
+        liquidity_score: u32,
+        price_stability_score: u32,
+        bridge_uptime_score: u32,
+    ) -> Bytes {
+        let mut data = Bytes::new(env);
+        let code = asset_code.to_string();
+        let code_bytes = code.as_bytes();
+        let mut i = 0;
+        while i < code_bytes.len() {
+            data.push_back(code_bytes[i]);
+            i += 1;
+        }
+
+        let hs = health_score.to_be_bytes();
+        let mut j = 0;
+        while j < hs.len() {
+            data.push_back(hs[j]);
+            j += 1;
+        }
+
+        let liq = liquidity_score.to_be_bytes();
+        let mut k = 0;
+        while k < liq.len() {
+            data.push_back(liq[k]);
+            k += 1;
+        }
+
+        let ps = price_stability_score.to_be_bytes();
+        let mut m = 0;
+        while m < ps.len() {
+            data.push_back(ps[m]);
+            m += 1;
+        }
+
+        let bu = bridge_uptime_score.to_be_bytes();
+        let mut n = 0;
+        while n < bu.len() {
+            data.push_back(bu[n]);
+            n += 1;
+        }
+
+        data
+    }
+
+    fn sign_message_with_mock_ed25519(
+        env: &Env,
+        message: &Bytes,
+        signer_id: &String,
+        public_key: &BytesN<32>,
+        nonce: u64,
+        expiry: u64,
+    ) -> BytesN<64> {
+        let mut data = Bytes::new(env);
+        data.append(message);
+
+        let signer_str = signer_id.to_string();
+        let signer_bytes = signer_str.as_bytes();
+        let mut i = 0;
+        while i < signer_bytes.len() {
+            data.push_back(signer_bytes[i]);
+            i += 1;
+        }
+
+        let public_key_bytes = public_key.to_array();
+        let mut j = 0;
+        while j < public_key_bytes.len() {
+            data.push_back(public_key_bytes[j]);
+            j += 1;
+        }
+
+        let nonce_be = nonce.to_be_bytes();
+        let mut k = 0;
+        while k < nonce_be.len() {
+            data.push_back(nonce_be[k]);
+            k += 1;
+        }
+
+        let expiry_be = expiry.to_be_bytes();
+        let mut m = 0;
+        while m < expiry_be.len() {
+            data.push_back(expiry_be[m]);
+            m += 1;
+        }
+
+        let digest: BytesN<32> = env.crypto().sha256(&data).into();
+        let digest_bytes = digest.to_array();
+        let mut combined = [0u8; 64];
+        let mut n = 0;
+        while n < 32 {
+            combined[n] = digest_bytes[n];
+            combined[n + 32] = digest_bytes[n];
+            n += 1;
+        }
+        BytesN::from_array(env, &combined)
+    }
+
+    #[test]
+    fn test_register_signer_verify_and_submit_health_signed() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let signer_id = String::from_str(&env, "oracle1");
+        let public_key = BytesN::from_array(&env, &[3u8; 32]);
+        client.register_signer(&admin, &signer_id, &public_key);
+        client.set_signature_threshold(&admin, &1);
+
+        let asset = String::from_str(&env, "USDC");
+        client.register_asset(&admin, &asset);
+
+        let health_score = 90u32;
+        let liquidity_score = 90u32;
+        let price_stability_score = 88u32;
+        let bridge_uptime_score = 92u32;
+
+        let message = build_health_message(
+            &env,
+            &asset,
+            health_score,
+            liquidity_score,
+            price_stability_score,
+            bridge_uptime_score,
+        );
+
+        let signature = sign_message_with_mock_ed25519(
+            &env,
+            &message,
+            &signer_id,
+            &public_key,
+            1,
+            env.ledger().timestamp() + 10,
+        );
+
+        let signer_sig = SignerSignature {
+            signer_id: signer_id.clone(),
+            signature,
+            nonce: 1,
+            expiry: env.ledger().timestamp() + 10,
+        };
+
+        client.submit_health_signed(
+            &admin,
+            &asset,
+            &health_score,
+            &liquidity_score,
+            &price_stability_score,
+            &bridge_uptime_score,
+            &signer_sig,
+        );
+
+        let stored = client.get_health(&asset).unwrap();
+        assert_eq!(stored.health_score, health_score);
+    }
+
+    #[test]
+    #[should_panic(expected = "nonce replay detected")]
+    fn test_submit_health_signed_replay_attack_prevention() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let signer_id = String::from_str(&env, "oracle2");
+        let public_key = BytesN::from_array(&env, &[4u8; 32]);
+        client.register_signer(&admin, &signer_id, &public_key);
+        client.set_signature_threshold(&admin, &1);
+
+        let asset = String::from_str(&env, "USDC");
+        client.register_asset(&admin, &asset);
+
+        let health_score = 80u32;
+        let liquidity_score = 80u32;
+        let price_stability_score = 80u32;
+        let bridge_uptime_score = 80u32;
+
+        let message = build_health_message(
+            &env,
+            &asset,
+            health_score,
+            liquidity_score,
+            price_stability_score,
+            bridge_uptime_score,
+        );
+
+        let signature = sign_message_with_mock_ed25519(
+            &env,
+            &message,
+            &signer_id,
+            &public_key,
+            2,
+            env.ledger().timestamp() + 10,
+        );
+
+        let signer_sig = SignerSignature {
+            signer_id: signer_id.clone(),
+            signature,
+            nonce: 2,
+            expiry: env.ledger().timestamp() + 10,
+        };
+
+        // First call succeeds
+        client.submit_health_signed(
+            &admin,
+            &asset,
+            &health_score,
+            &liquidity_score,
+            &price_stability_score,
+            &bridge_uptime_score,
+            &signer_sig,
+        );
+
+        // Second call with same nonce should panic replay check above
+        client.submit_health_signed(
+            &admin,
+            &asset,
+            &health_score,
+            &liquidity_score,
+            &price_stability_score,
+            &bridge_uptime_score,
+            &signer_sig,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "signature has expired")]
+    fn test_submit_health_signed_expiry_check() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let signer_id = String::from_str(&env, "oracle3");
+        let public_key = BytesN::from_array(&env, &[5u8; 32]);
+        client.register_signer(&admin, &signer_id, &public_key);
+        client.set_signature_threshold(&admin, &1);
+
+        let asset = String::from_str(&env, "USDC");
+        client.register_asset(&admin, &asset);
+
+        let health_score = 75u32;
+        let liquidity_score = 75u32;
+        let price_stability_score = 75u32;
+        let bridge_uptime_score = 75u32;
+
+        let message = build_health_message(
+            &env,
+            &asset,
+            health_score,
+            liquidity_score,
+            price_stability_score,
+            bridge_uptime_score,
+        );
+
+        let signature = sign_message_with_mock_ed25519(
+            &env,
+            &message,
+            &signer_id,
+            &public_key,
+            3,
+            env.ledger().timestamp() - 1,
+        );
+
+        let signer_sig = SignerSignature {
+            signer_id,
+            signature,
+            nonce: 3,
+            expiry: env.ledger().timestamp() - 1,
+        };
+
+        client.submit_health_signed(
+            &admin,
+            &asset,
+            &health_score,
+            &liquidity_score,
+            &price_stability_score,
+            &bridge_uptime_score,
+            &signer_sig,
+        );
     }
 
     #[test]
