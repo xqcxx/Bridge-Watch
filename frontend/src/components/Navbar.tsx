@@ -25,6 +25,7 @@ export default function Navbar({ isLoading = false }: NavbarProps) {
   const [isWatchlistOpen, setIsWatchlistOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { unreadCount } = useNotificationContext();
+  const location = useLocation();
   const navRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -99,8 +100,7 @@ export default function Navbar({ isLoading = false }: NavbarProps) {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            <div className="text-sm text-stellar-text-secondary">Stellar Network Monitor</div>
-
+          </div>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsWatchlistOpen(true)}
