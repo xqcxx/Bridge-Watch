@@ -209,6 +209,25 @@ jobs:
         working-directory: contracts
         run: cargo test --workspace
 
+      - name: Run relay integration test suite
+        working-directory: contracts
+        run: cargo test -p bridge-watch-contracts --test relay_contract.integration
+
+      - name: Generate contract coverage (best effort)
+        working-directory: contracts
+        run: |
+          cargo install cargo-llvm-cov --locked
+          cargo llvm-cov -p bridge-watch-contracts --lcov --output-path lcov-contracts.info --tests
+        continue-on-error: true
+
+      - name: Upload contract coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./contracts/lcov-contracts.info
+          flags: contracts
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+
       - name: Upload contract artifacts
         uses: actions/upload-artifact@v4
         with:
