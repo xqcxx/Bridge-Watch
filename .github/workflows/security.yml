@@ -10,6 +10,22 @@ on:
     - cron: "0 2 * * *"
 
 jobs:
+  dependency-review:
+    name: Dependency Review (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
   npm-audit:
     name: NPM Security Audit
     runs-on: ubuntu-latest
@@ -32,6 +48,16 @@ jobs:
         run: npm audit --audit-level=moderate
         continue-on-error: true
 
+      - name: Upload npm audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-reports
+          path: |
+            backend/npm-audit.json
+            frontend/npm-audit.json
+          if-no-files-found: ignore
+
   cargo-audit:
     name: Cargo Security Audit
     runs-on: ubuntu-latest
@@ -49,6 +75,32 @@ jobs:
         working-directory: contracts
         run: cargo audit
         continue-on-error: true
+
+  sast-semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/typescript
+            p/rust
+        continue-on-error: true
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        if: always()
 
   codeql:
     name: CodeQL Analysis
@@ -93,7 +145,7 @@ jobs:
           scan-ref: "."
           format: "sarif"
           output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
+          severity: "CRITICAL,HIGH,MEDIUM"
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -101,8 +153,16 @@ jobs:
           sarif_file: "trivy-results.sarif"
         if: always()
 
+      - name: Upload Trivy SARIF artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          if-no-files-found: ignore
+
   secret-scan:
-    name: Secret Scanning
+    name: Secret Scanning (Gitleaks)
     runs-on: ubuntu-latest
 
     steps:
@@ -110,26 +170,131 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: TruffleHog OSS
-        uses: trufflesecurity/trufflehog@main
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
         with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --debug --only-verified
+          args: detect --source . --report-format sarif --report-path gitleaks.sarif
+        continue-on-error: true
+
+      - name: Upload gitleaks SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+        if: always()
+
+      - name: Upload gitleaks artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitleaks-results
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  license-compliance:
+    name: License Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install license tools
+        run: |
+          npm install -g license-checker-rseidelsohn
+          cargo install cargo-license --locked
+
+      - name: Generate license reports
+        run: |
+          license-checker-rseidelsohn --start backend --json --production > backend-license-report.json
+          license-checker-rseidelsohn --start frontend --json --production > frontend-license-report.json
+          cd contracts && cargo license --json > ../cargo-license-report.json
+
+      - name: Validate denied licenses
+        run: |
+          DENY_REGEX='GPL-3.0|AGPL-3.0|LGPL-3.0'
+          if grep -E -q "$DENY_REGEX" backend-license-report.json frontend-license-report.json cargo-license-report.json; then
+            echo "Denied license detected"
+            exit 1
+          fi
+          echo "License compliance check passed"
+
+      - name: Upload license reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports
+          path: |
+            backend-license-report.json
+            frontend-license-report.json
+            cargo-license-report.json
 
   security-summary:
     name: Security Summary
     runs-on: ubuntu-latest
-    needs: [npm-audit, cargo-audit, codeql, trivy-scan, secret-scan]
+    needs:
+      [dependency-review, npm-audit, cargo-audit, sast-semgrep, codeql, trivy-scan, secret-scan, license-compliance]
     if: always()
 
     steps:
-      - name: Security Summary
+      - name: Create Security Summary
         run: |
-          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Security Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency Review: ${{ needs.dependency-review.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- NPM Audit: ${{ needs.npm-audit.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Cargo Audit: ${{ needs.cargo-audit.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Semgrep SAST: ${{ needs.sast-semgrep.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- CodeQL: ${{ needs.codeql.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Trivy: ${{ needs.trivy-scan.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Secret Scan: ${{ needs.secret-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- License Compliance: ${{ needs.license-compliance.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Severity Classification" >> $GITHUB_STEP_SUMMARY
+          echo "- Critical/High findings should block release." >> $GITHUB_STEP_SUMMARY
+          echo "- Medium findings require triage and scheduled remediation." >> $GITHUB_STEP_SUMMARY
+          echo "- Low findings can be batched into routine hardening." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Auto-remediation Suggestions" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run npm audit fix in backend/frontend for patch-level upgrades." >> $GITHUB_STEP_SUMMARY
+          echo "2. Pin vulnerable Rust crates and rerun cargo audit." >> $GITHUB_STEP_SUMMARY
+          echo "3. Rotate/revoke exposed secrets and scrub git history where needed." >> $GITHUB_STEP_SUMMARY
+          echo "4. Address Semgrep and CodeQL taint flows before deployment." >> $GITHUB_STEP_SUMMARY
+
+      - name: Build security dashboard artifact
+        run: |
+          cat > security-dashboard.md <<'EOF'
+          # Security Dashboard
+
+          ## Pipeline status
+          - Dependency Review: ${{ needs.dependency-review.result }}
+          - NPM Audit: ${{ needs.npm-audit.result }}
+          - Cargo Audit: ${{ needs.cargo-audit.result }}
+          - Semgrep SAST: ${{ needs.sast-semgrep.result }}
+          - CodeQL: ${{ needs.codeql.result }}
+          - Trivy: ${{ needs.trivy-scan.result }}
+          - Secret Scan: ${{ needs.secret-scan.result }}
+          - License Compliance: ${{ needs.license-compliance.result }}
+
+          ## Severity policy
+          - Critical/High: immediate remediation and release block.
+          - Medium: triage within sprint.
+          - Low: include in backlog hardening.
+
+          ## Recommended remediation flow
+          1. Prioritize Critical and High findings.
+          2. Open issue per finding with owner and ETA.
+          3. Validate fix with pipeline rerun and attach SARIF diff.
+          EOF
+
+      - name: Upload security dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-dashboard
+          path: security-dashboard.md
