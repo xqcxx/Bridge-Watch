@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import { GlobalErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationProvider } from "./context/NotificationContext";
 import { useNotifications } from "./hooks/useNotifications";
 
@@ -14,6 +15,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const WatchlistPage = lazy(() => import("./pages/Watchlist"));
 const Transactions = lazy(() => import("./pages/Transactions"));
 const ApiKeys = lazy(() => import("./pages/ApiKeys"));
+const SupplyChain = lazy(() => import("./pages/SupplyChain"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -22,6 +24,7 @@ function NotificationInitializer() {
 
 function App() {
   return (
+    <GlobalErrorBoundary>
     <NotificationProvider>
       <NotificationInitializer />
       <Suspense
@@ -44,10 +47,12 @@ function App() {
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admin/api-keys" element={<ApiKeys />} />
+            <Route path="/supply-chain" element={<SupplyChain />} />
           </Route>
         </Routes>
       </Suspense>
     </NotificationProvider>
+    </GlobalErrorBoundary>
   );
 }
 
