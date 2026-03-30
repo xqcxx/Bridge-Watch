@@ -209,10 +209,8 @@ pub fn has_role_internal(env: &Env, address: &Address, role: &Role) -> bool {
         .unwrap_or_else(|| Vec::new(env));
 
     for g in grants.iter() {
-        if &g.grantee == address && &g.role == role {
-            if g.expires_at == 0 || g.expires_at > now {
-                return true;
-            }
+        if &g.grantee == address && &g.role == role && (g.expires_at == 0 || g.expires_at > now) {
+            return true;
         }
     }
     false
@@ -259,10 +257,11 @@ pub fn has_permission_internal(env: &Env, address: &Address, permission: &Permis
         .unwrap_or_else(|| Vec::new(env));
 
     for pg in perm_grants.iter() {
-        if &pg.grantee == address && &pg.permission == permission {
-            if pg.expires_at == 0 || pg.expires_at > now {
-                return true;
-            }
+        if &pg.grantee == address
+            && &pg.permission == permission
+            && (pg.expires_at == 0 || pg.expires_at > now)
+        {
+            return true;
         }
     }
 
@@ -276,12 +275,7 @@ pub fn has_permission_internal(env: &Env, address: &Address, permission: &Permis
 ///
 /// Calls `caller.require_auth()` and panics with a descriptive message if the
 /// check fails.
-pub fn require_permission(
-    env: &Env,
-    caller: &Address,
-    admin: &Address,
-    permission: &Permission,
-) {
+pub fn require_permission(env: &Env, caller: &Address, admin: &Address, permission: &Permission) {
     caller.require_auth();
     if caller == admin {
         return;
@@ -320,9 +314,7 @@ pub fn grant_role_internal(
                 expires_at,
             };
             grants.set(i, updated);
-            env.storage()
-                .persistent()
-                .set(&AclKey::RoleGrants, &grants);
+            env.storage().persistent().set(&AclKey::RoleGrants, &grants);
             return;
         }
     }
@@ -334,9 +326,7 @@ pub fn grant_role_internal(
         granted_at: now,
         expires_at,
     });
-    env.storage()
-        .persistent()
-        .set(&AclKey::RoleGrants, &grants);
+    env.storage().persistent().set(&AclKey::RoleGrants, &grants);
 }
 
 /// Internal: remove a role grant.

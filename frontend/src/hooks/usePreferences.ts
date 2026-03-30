@@ -3,8 +3,8 @@ import {
   useUserPreferencesStore,
   selectAlertThresholds,
   selectFavoriteAssets,
-  useNotificationStore,
   useNotifications,
+  type UserPreferences,
 } from "../stores";
 
 /**
@@ -73,7 +73,12 @@ export function useFavorites() {
 export function useAlertThresholds() {
   const thresholds = useUserPreferencesStore(selectAlertThresholds);
   const setAlertThreshold = useUserPreferencesStore(
-    (state) => state.setAlertThreshold
+    (state: UserPreferences & {
+      setAlertThreshold: (
+        type: keyof UserPreferences["alertThresholds"],
+        value: number
+      ) => void;
+    }) => state.setAlertThreshold
   );
 
   const updatePriceDeviation = useCallback(

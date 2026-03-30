@@ -1,4 +1,5 @@
 import type { BridgeTransaction } from "../types";
+import CopyButton from "./CopyButton";
 
 interface TransactionDetailProps {
   transaction: BridgeTransaction;
@@ -116,8 +117,26 @@ export default function TransactionDetail({
           </DetailRow>
 
           <DetailRow label="Transaction Hash">
-            <span className="font-mono text-stellar-blue text-xs">
-              {tx.txHash}
+            <span className="inline-flex items-center gap-2 font-mono text-stellar-blue text-xs">
+              <span>{tx.txHash}</span>
+              <CopyButton
+                value={tx.txHash}
+                label="Copy"
+                copiedLabel="Copied"
+                failedLabel="Failed"
+                variant="inline"
+                ariaLabel="Copy full transaction hash"
+              />
+              <CopyButton
+                value={tx}
+                label="JSON"
+                copiedLabel="Copied"
+                failedLabel="Failed"
+                variant="inline"
+                format="pretty-json"
+                mimeType="application/json"
+                ariaLabel="Copy transaction as formatted JSON"
+              />
             </span>
           </DetailRow>
 
@@ -148,14 +167,30 @@ export default function TransactionDetail({
           </DetailRow>
 
           <DetailRow label="Sender">
-            <span className="font-mono text-xs" title={tx.senderAddress}>
-              {truncateAddress(tx.senderAddress)}
+            <span className="inline-flex items-center gap-2 font-mono text-xs" title={tx.senderAddress}>
+              <span>{truncateAddress(tx.senderAddress)}</span>
+              <CopyButton
+                value={tx.senderAddress}
+                label="Copy"
+                copiedLabel="Copied"
+                failedLabel="Failed"
+                variant="inline"
+                ariaLabel="Copy sender address"
+              />
             </span>
           </DetailRow>
 
           <DetailRow label="Recipient">
-            <span className="font-mono text-xs" title={tx.recipientAddress}>
-              {truncateAddress(tx.recipientAddress)}
+            <span className="inline-flex items-center gap-2 font-mono text-xs" title={tx.recipientAddress}>
+              <span>{truncateAddress(tx.recipientAddress)}</span>
+              <CopyButton
+                value={tx.recipientAddress}
+                label="Copy"
+                copiedLabel="Copied"
+                failedLabel="Failed"
+                variant="inline"
+                ariaLabel="Copy recipient address"
+              />
             </span>
           </DetailRow>
 
@@ -171,7 +206,18 @@ export default function TransactionDetail({
 
           {tx.blockNumber !== null && (
             <DetailRow label="Block Number">
-              {tx.blockNumber.toLocaleString()}
+              <span className="inline-flex items-center gap-2">
+                <span>{tx.blockNumber.toLocaleString()}</span>
+                <CopyButton
+                  value={tx.blockNumber}
+                  label="Copy"
+                  copiedLabel="Copied"
+                  failedLabel="Failed"
+                  variant="inline"
+                  serialize={(value) => String(value)}
+                  ariaLabel="Copy block number"
+                />
+              </span>
             </DetailRow>
           )}
         </div>
@@ -197,6 +243,17 @@ export default function TransactionDetail({
               View on Stellar Expert
             </a>
           )}
+          {tx.stellarTxHash && (
+            <CopyButton
+              value={getStellarExplorerUrl(tx.stellarTxHash)}
+              label="Copy Stellar link"
+              copiedLabel="Copied"
+              failedLabel="Failed"
+              format="url"
+              className="bg-stellar-blue/10 text-stellar-blue border-stellar-blue/30 hover:bg-stellar-blue/20 hover:text-stellar-blue"
+              ariaLabel="Copy Stellar explorer URL"
+            />
+          )}
           {tx.ethereumTxHash && (
             <a
               href={getEthereumExplorerUrl(tx.ethereumTxHash)}
@@ -215,6 +272,17 @@ export default function TransactionDetail({
               </svg>
               View on Etherscan
             </a>
+          )}
+          {tx.ethereumTxHash && (
+            <CopyButton
+              value={getEthereumExplorerUrl(tx.ethereumTxHash)}
+              label="Copy Etherscan link"
+              copiedLabel="Copied"
+              failedLabel="Failed"
+              format="url"
+              className="bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 hover:text-purple-300"
+              ariaLabel="Copy Ethereum explorer URL"
+            />
           )}
         </div>
       </div>

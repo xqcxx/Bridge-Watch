@@ -7,7 +7,7 @@ import { useCacheStore } from "../stores";
  * Falls back to React Query's built-in caching when Zustand cache is not needed.
  */
 export function useAssets() {
-  const { set, get, has } = useCacheStore();
+  const { set, get } = useCacheStore();
 
   return useQuery({
     queryKey: ["assets"],

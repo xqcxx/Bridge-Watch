@@ -223,7 +223,9 @@ export const useThemeStore = create<ThemeState & ThemeActions>()(
         },
 
         removeCustomCssVar: (name) => {
-          const { [name]: _, ...rest } = get().customCssVars;
+          const rest = Object.fromEntries(
+            Object.entries(get().customCssVars).filter(([key]) => key !== name)
+          );
           set({ customCssVars: rest }, false, "removeCustomCssVar");
         },
 

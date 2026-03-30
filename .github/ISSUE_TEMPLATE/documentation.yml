@@ -1,0 +1,75 @@
+name: Documentation Improvement
+description: Report missing, incorrect, or unclear documentation
+title: "docs: "
+labels: ["documentation", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good documentation is as important as good code. Thank you for helping improve it!
+
+        Documentation issues are often great first contributions — if you spotted the problem you're already most of the way to fixing it.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: Which document is affected?
+      options:
+        - README.md
+        - CONTRIBUTING.md
+        - CODE_OF_CONDUCT.md
+        - docs/DEVELOPMENT_SETUP.md
+        - docs/MIGRATION_GUIDE.md
+        - backend/docs/API.md
+        - backend/docs/openapi.json
+        - backend/TESTING.md
+        - Inline code comments / JSDoc
+        - Rust doc comments
+        - CI/CD documentation
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem_type
+    attributes:
+      label: Type of documentation issue
+      options:
+        - Missing — something important is not documented at all
+        - Incorrect — the documentation describes something wrong
+        - Outdated — the documentation was accurate but is no longer up to date
+        - Unclear — the documentation exists but is confusing or ambiguous
+        - Incomplete — the documentation exists but is missing important detail
+        - Typo / grammar
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the issue
+      description: Be specific about what is wrong or missing. A link to the exact section helps.
+      placeholder: "The 'Running Tests' section in backend/TESTING.md says to run `npm test:integration` but the correct command is `npm run test:integration`."
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: What should the documentation say instead? If you already have the corrected text, paste it here.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a PR to fix this myself

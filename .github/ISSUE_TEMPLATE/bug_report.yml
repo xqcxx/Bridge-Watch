@@ -1,0 +1,98 @@
+name: Bug Report
+description: Something is broken or behaving unexpectedly
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Complete all sections below so we can reproduce and fix the issue as quickly as possible.
+
+        **Before submitting:** please search [existing issues](https://github.com/StellaBridge/Bridge-Watch/issues) to avoid duplicates.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I am on the latest version of `main`
+          required: true
+        - label: This is not a security vulnerability (security issues go to security@stellarbridgewatch.io)
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project is affected?
+      options:
+        - Backend API
+        - Frontend dashboard
+        - Soroban contracts
+        - Database / migrations
+        - CI/CD pipeline
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "When I call GET /api/v1/assets, the response is missing the `health_score` field even though the database has data."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: "The response should include a `health_score` field with a value between 0 and 100."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Precise steps are the fastest path to a fix.
+      placeholder: |
+        1. Start the dev environment with `make dev`
+        2. Run database migrations: `npm run migrate`
+        3. Seed the database: `npm run seed`
+        4. Call `GET http://localhost:3001/api/v1/assets`
+        5. Observe the response — `health_score` is absent
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Fill in what is relevant.
+      value: |
+        - OS:
+        - Node.js version:
+        - npm version:
+        - Docker version:
+        - Browser (frontend bugs only):
+        - Commit / branch:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste error output, stack traces, or attach screenshots. Wrap logs in triple backticks.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — related issues, attempted workarounds, etc.

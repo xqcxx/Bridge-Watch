@@ -4,12 +4,24 @@ import { useWatchlist } from "../hooks/useWatchlist";
 import { WatchlistManager } from "../components/WatchlistManager";
 import { AssetWatchlistButton } from "../components/AssetWatchlistButton";
 import { getAssetPrice, getAssetHealth } from "../services/api";
+import type { HealthScore } from "../types";
 import { Link } from "react-router-dom";
+
+interface AssetDetails {
+  price: {
+    symbol: string;
+    vwap: number;
+    sources: Array<{ source: string; price: number; timestamp: string }>;
+    deviation: number;
+    lastUpdated: string;
+  } | null;
+  health: HealthScore | null;
+}
 
 export default function WatchlistPage() {
   const { activeWatchlist, importWatchlists } = useWatchlist();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [assetDetails, setAssetDetails] = useState<Record<string, any>>({});
+  const [assetDetails, setAssetDetails] = useState<Record<string, AssetDetails>>({});
   const [isLoading, setIsLoading] = useState(false);
 
   // Handle shared link import
@@ -36,7 +48,7 @@ export default function WatchlistPage() {
     const fetchDetails = async () => {
       setIsLoading(true);
       try {
-        const details: Record<string, any> = {};
+        const details: Record<string, AssetDetails> = {};
         await Promise.all(
           activeWatchlist.assets.map(async (symbol) => {
             try {
@@ -116,6 +128,7 @@ export default function WatchlistPage() {
                 <tbody className="divide-y divide-stellar-border">
                   {activeWatchlist.assets.map((symbol) => {
                     const data = assetDetails[symbol];
+                    const healthScore = data?.health?.overallScore;
                     return (
                       <tr key={symbol} className="hover:bg-stellar-dark/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -133,11 +146,11 @@ export default function WatchlistPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                            data?.health?.overallScore >= 80 ? "bg-green-400/10 text-green-400 border-green-400/20" :
-                            data?.health?.overallScore >= 50 ? "bg-yellow-400/10 text-yellow-400 border-yellow-400/20" :
+                            typeof healthScore === "number" && healthScore >= 80 ? "bg-green-400/10 text-green-400 border-green-400/20" :
+                            typeof healthScore === "number" && healthScore >= 50 ? "bg-yellow-400/10 text-yellow-400 border-yellow-400/20" :
                             "bg-red-400/10 text-red-400 border-red-400/20"
                           }`}>
-                            {isLoading ? "..." : data?.health?.overallScore ?? "—"}
+                            {isLoading ? "..." : healthScore ?? "—"}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">

@@ -15,22 +15,21 @@ type LoggerImpl = <T>(
 ) => StateCreator<T, [], []>;
 
 const loggerImpl: LoggerImpl = (f, name) => (set, get, store) => {
-  const loggedSet: typeof set = (...args) => {
+  const loggedSet = (...args: Parameters<typeof set>) => {
     const prevState = get();
     set(...args);
     const nextState = get();
+    const action = (args as unknown[])[2];
 
     if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-      console.group(`[Zustand] ${name || "Store"} - ${args[2] || "action"}`);
+      console.group(`[Zustand] ${name || "Store"} - ${action || "action"}`);
       console.log("Previous state:", prevState);
       console.log("Next state:", nextState);
       console.groupEnd();
     }
-
-    return nextState;
   };
 
-  return f(loggedSet, get, store);
+  return f(loggedSet as typeof set, get, store);
 };
 
 export const logger = loggerImpl as Logger;
@@ -49,11 +48,12 @@ export const stateMetricsMiddleware = <T>(
   onMetric?: (metric: StateChangeMetric) => void
 ): StateCreator<T, [], []> => {
   return (set, get, store) => {
-    const wrappedSet: typeof set = (...args) => {
+    const wrappedSet = (...args: Parameters<typeof set>) => {
       const start = performance.now();
-      const actionName = typeof args[2] === "string" ? args[2] : "unknown";
+  const action = (args as unknown[])[2];
+      const actionName = typeof action === "string" ? action : "unknown";
 
-      const result = set(...args);
+  set(...args);
 
       const duration = performance.now() - start;
       const metric: StateChangeMetric = {
@@ -66,11 +66,9 @@ export const stateMetricsMiddleware = <T>(
       if (onMetric) {
         onMetric(metric);
       }
-
-      return result;
     };
 
-    return f(wrappedSet, get, store);
+    return f(wrappedSet as typeof set, get, store);
   };
 };
 
@@ -80,11 +78,12 @@ export const errorBoundaryMiddleware = <T>(
   onError?: (error: Error, actionName: string) => void
 ): StateCreator<T, [], []> => {
   return (set, get, store) => {
-    const wrappedSet: typeof set = (...args) => {
+    const wrappedSet = (...args: Parameters<typeof set>) => {
       try {
-        return set(...args);
+        set(...args);
       } catch (error) {
-        const actionName = typeof args[2] === "string" ? args[2] : "unknown";
+        const action = (args as unknown[])[2];
+        const actionName = typeof action === "string" ? action : "unknown";
 
         if (onError && error instanceof Error) {
           onError(error, actionName);
@@ -96,6 +95,6 @@ export const errorBoundaryMiddleware = <T>(
       }
     };
 
-    return f(wrappedSet, get, store);
+    return f(wrappedSet as typeof set, get, store);
   };
 };

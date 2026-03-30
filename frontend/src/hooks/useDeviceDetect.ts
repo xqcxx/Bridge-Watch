@@ -1,12 +1,16 @@
 import { useEffect } from "react";
-import { useUserPreferencesStore, useUIStore } from "../stores";
+import { useUIStore, type UIActions, type UIState } from "../stores";
 
 /**
  * Hook to detect and handle mobile view changes
  */
 export function useMobileDetect() {
-  const setIsMobileView = useUIStore((state) => state.setIsMobileView);
-  const setSidebarOpen = useUIStore((state) => state.setSidebarOpen);
+  const setIsMobileView = useUIStore(
+    (state: UIState & UIActions) => state.setIsMobileView
+  );
+  const setSidebarOpen = useUIStore(
+    (state: UIState & UIActions) => state.setSidebarOpen
+  );
 
   useEffect(() => {
     const checkMobile = () => {
@@ -29,7 +33,9 @@ export function useMobileDetect() {
  * Hook to detect touch device capability
  */
 export function useTouchDetect() {
-  const setIsTouchDevice = useUIStore((state) => state.setIsTouchDevice);
+  const setIsTouchDevice = useUIStore(
+    (state: UIState & UIActions) => state.setIsTouchDevice
+  );
 
   useEffect(() => {
     const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;

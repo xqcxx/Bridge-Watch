@@ -4,6 +4,8 @@ import {
   useWebSocketStore,
   selectIsConnected,
   selectActiveChannels,
+  type WebSocketState,
+  type WebSocketActions,
 } from "../stores";
 
 const WS_URL = `ws://${window.location.hostname}:3002/api/v1/ws`;
@@ -50,19 +52,22 @@ export function useWebSocket(channel: string, onMessage: (data: unknown) => void
       confirmSubscription(channel);
     };
 
-    const handleClose = () => {
-      markDisconnected();
-    };
+    const unsubscribeConnectionState = wsService.onStateChange((state) => {
+      if (state === "connected") {
+        handleOpen();
+        return;
+      }
 
-    const handleError = () => {
-      addError(1006, "WebSocket connection error");
-      incrementReconnectAttempts();
-    };
+      if (state === "disconnected") {
+        markDisconnected();
+        return;
+      }
 
-    // Add event listeners for connection tracking
-    wsService.on("open", handleOpen);
-    wsService.on("close", handleClose);
-    wsService.on("error", handleError);
+      if (state === "error") {
+        addError(1006, "WebSocket connection error");
+        incrementReconnectAttempts();
+      }
+    });
 
     const unsubscribeChannel = wsService.subscribe(channel, (data) => {
       addMessage(channel, data);
@@ -72,9 +77,7 @@ export function useWebSocket(channel: string, onMessage: (data: unknown) => void
     return () => {
       unsubscribe(channel);
       unsubscribeChannel();
-      wsService.off("open", handleOpen);
-      wsService.off("close", handleClose);
-      wsService.off("error", handleError);
+      unsubscribeConnectionState();
     };
   }, [channel, onMessage]);
 
@@ -102,15 +105,21 @@ export function useWebSocket(channel: string, onMessage: (data: unknown) => void
  * Hook to access WebSocket connection status and statistics
  */
 export function useWebSocketStatus() {
-  const status = useWebSocketStore((state) => state.status);
+  const status = useWebSocketStore(
+    (state: WebSocketState & WebSocketActions) => state.status
+  );
   const reconnectAttempts = useWebSocketStore(
-    (state) => state.reconnectAttempts
+    (state: WebSocketState & WebSocketActions) => state.reconnectAttempts
   );
   const maxReconnectAttempts = useWebSocketStore(
-    (state) => state.maxReconnectAttempts
+    (state: WebSocketState & WebSocketActions) => state.maxReconnectAttempts
   );
-  const lastError = useWebSocketStore((state) => state.lastError);
-  const messageCount = useWebSocketStore((state) => state.messageCount);
+  const lastError = useWebSocketStore(
+    (state: WebSocketState & WebSocketActions) => state.lastError
+  );
+  const messageCount = useWebSocketStore(
+    (state: WebSocketState & WebSocketActions) => state.messageCount
+  );
 
   return {
     status,
