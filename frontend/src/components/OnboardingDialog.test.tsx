@@ -1,17 +1,26 @@
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { axe } from "vitest-axe";
 import { MemoryRouter } from "react-router-dom";
 import OnboardingDialog from "./OnboardingDialog";
 
 describe("OnboardingDialog", () => {
-  it("moves between steps and completes flow", () => {
+  it("moves between steps and completes flow", async () => {
     const onClose = vi.fn();
     const onComplete = vi.fn();
 
-    render(
+    const { asFragment, container } = render(
       <MemoryRouter>
         <OnboardingDialog open onClose={onClose} onComplete={onComplete} />
       </MemoryRouter>
     );
+
+    // Snapshot test
+    expect(asFragment()).toMatchSnapshot();
+
+    // Accessibility test
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
 
     expect(screen.getByRole("heading", { name: "Welcome to Bridge Watch" })).toBeInTheDocument();
 

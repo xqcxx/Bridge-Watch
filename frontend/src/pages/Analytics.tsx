@@ -48,22 +48,6 @@ export default function Analytics() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: "Total Bridges Monitored", value: "--" },
-          { label: "Total Assets Tracked", value: totalTrackedAssets || "--" },
-          { label: "Average Health Score", value: avgHealthScore },
-          { label: "Total Value Locked", value: "--" },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-stellar-card border border-stellar-border rounded-lg p-6"
-          >
-            <p className="text-sm text-stellar-text-secondary">{stat.label}</p>
-            <p className="mt-2 text-2xl font-bold text-stellar-text-primary">{stat.value}</p>
-          </div>
-        ))}
-      </div>
       <ErrorBoundary onRetry={() => window.location.reload()}>
         <Suspense
           fallback={
@@ -74,30 +58,22 @@ export default function Analytics() {
             </div>
           }
         >
-          {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <SkeletonCard key={i} rows={2} ariaLabel="Loading analytics summary" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                { label: "Total Bridges Monitored", value: "--" },
-                { label: "Total Assets Tracked", value: totalTrackedAssets || "--" },
-                { label: "Average Health Score", value: avgHealthScore },
-                { label: "Total Value Locked", value: "--" },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  className="bg-stellar-card border border-stellar-border rounded-lg p-6"
-                >
-                  <p className="text-sm text-stellar-text-secondary">{stat.label}</p>
-                  <p className="mt-2 text-2xl font-bold text-white">{stat.value}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              { label: "Total Bridges Monitored", value: "--" },
+              { label: "Total Assets Tracked", value: totalTrackedAssets || "--" },
+              { label: "Average Health Score", value: avgHealthScore },
+              { label: "Total Value Locked", value: "--" },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+              >
+                <p className="text-sm text-stellar-text-secondary">{stat.label}</p>
+                <p className="mt-2 text-2xl font-bold text-white">{stat.value}</p>
+              </div>
+            ))}
+          </div>
         </Suspense>
       </ErrorBoundary>
 
@@ -112,42 +88,6 @@ export default function Analytics() {
         </div>
 
         <div className="mt-4">
-          {error ? (
-            <p className="text-red-400" role="alert">
-              Failed to load assets for comparison.
-            </p>
-          ) : isLoading ? (
-            <p className="text-stellar-text-secondary" role="status" aria-live="polite">
-              Loading assets…
-            </p>
-          ) : assetsData && assetsData.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {assetsData.map((asset) => {
-                const selected = selectedSymbols.includes(asset.symbol);
-                const disabled = !selected && selectedSymbols.length >= MAX_COMPARE_ASSETS;
-                return (
-                  <button
-                    key={asset.symbol}
-                    type="button"
-                    onClick={() => handleToggleAsset(asset.symbol)}
-                    disabled={disabled}
-                    aria-pressed={selected}
-                    className={`rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-blue ${
-                      selected
-                        ? "border-stellar-blue bg-stellar-blue/20 text-stellar-text-primary"
-                        : "border-stellar-border bg-stellar-card text-stellar-text-secondary hover:text-stellar-text-primary"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {asset.symbol}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-stellar-text-secondary">
-              No assets are available for comparison yet.
-            </p>
-          )}
           <ErrorBoundary onRetry={() => window.location.reload()}>
             <Suspense
               fallback={
@@ -182,8 +122,8 @@ export default function Analytics() {
                         aria-pressed={selected}
                         className={`rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-blue ${
                           selected
-                            ? "border-stellar-blue bg-stellar-blue/20 text-white"
-                            : "border-stellar-border bg-stellar-dark text-stellar-text-secondary hover:text-white"
+                            ? "border-stellar-blue bg-stellar-blue/20 text-stellar-text-primary"
+                            : "border-stellar-border bg-stellar-card text-stellar-text-secondary hover:text-stellar-text-primary"
                         } disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
                         {asset.symbol}

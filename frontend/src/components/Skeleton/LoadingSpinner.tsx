@@ -1,15 +1,21 @@
-import React from "react";
-
 interface LoadingSpinnerProps {
   message?: string;
   progress?: number;
   className?: string;
+  size?: "small" | "medium" | "large";
 }
+
+const sizeClasses = {
+  small: "w-5 h-5",
+  medium: "w-8 h-8",
+  large: "w-12 h-12",
+};
 
 export default function LoadingSpinner({
   message = "Loading…",
   progress,
   className = "",
+  size = "medium",
 }: LoadingSpinnerProps) {
   const normalizedProgress = progress != null ? Math.min(100, Math.max(0, progress)) : undefined;
 
@@ -19,7 +25,7 @@ export default function LoadingSpinner({
       role="status"
       aria-live="polite"
     >
-      <div className="relative w-10 h-10">
+      <div className={`relative ${sizeClasses[size]}`}>
         <div className="absolute inset-0 rounded-full border-2 border-stellar-border" />
         <div className="absolute inset-0 rounded-full border-2 border-t-stellar-blue animate-spin" />
       </div>

@@ -1,4 +1,4 @@
-import React from "react";
+import { Link } from "react-router-dom";
 import { useNotificationContext } from "../hooks/useNotificationContext";
 import type { Notification } from "../context/NotificationContext.types";
 import NotificationItem from "./NotificationItem";

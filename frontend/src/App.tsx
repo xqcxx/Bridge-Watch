@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import { GlobalErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationProvider } from "./context/NotificationContext";
 import { useNotifications } from "./hooks/useNotifications";
 
@@ -12,7 +13,9 @@ const Reports = lazy(() => import("./pages/Reports"));
 const Landing = lazy(() => import("./pages/Landing"));
 const Settings = lazy(() => import("./pages/Settings"));
 const WatchlistPage = lazy(() => import("./pages/Watchlist"));
-
+const Transactions = lazy(() => import("./pages/Transactions"));
+const ApiKeys = lazy(() => import("./pages/ApiKeys"));
+const SupplyChain = lazy(() => import("./pages/SupplyChain"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -21,6 +24,7 @@ function NotificationInitializer() {
 
 function App() {
   return (
+    <GlobalErrorBoundary>
     <NotificationProvider>
       <NotificationInitializer />
       <Suspense
@@ -31,26 +35,25 @@ function App() {
         }
       >
         <Routes>
-          {/* Landing page — full-page layout with its own nav */}
           <Route path="/" element={<Landing />} />
 
-          {/* App pages — shared Layout with Navbar */}
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/assets/:symbol" element={<AssetDetail />} />
             <Route path="/bridges" element={<Bridges />} />
+            <Route path="/transactions" element={<Transactions />} />
             <Route path="/analytics" element={<Analytics />} />
-            <Route path="/liquidity" element={<LiquidityDashboard />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/admin/api-keys" element={<ApiKeys />} />
+            <Route path="/supply-chain" element={<SupplyChain />} />
           </Route>
-
         </Routes>
       </Suspense>
     </NotificationProvider>
+    </GlobalErrorBoundary>
   );
 }
 
 export default App;
-

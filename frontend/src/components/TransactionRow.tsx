@@ -1,4 +1,5 @@
 import type { BridgeTransaction } from "../types";
+import CopyButton from "./CopyButton";
 
 interface TransactionRowProps {
   transaction: BridgeTransaction;
@@ -78,9 +79,19 @@ export default function TransactionRow({
 
       {/* Tx Hash */}
       <td className="px-4 py-3">
-        <span className="text-sm text-stellar-blue font-mono">
-          {truncateHash(tx.txHash)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-stellar-blue font-mono">
+            {truncateHash(tx.txHash)}
+          </span>
+          <CopyButton
+            value={tx.txHash}
+            label="Copy"
+            copiedLabel="Copied"
+            failedLabel="Failed"
+            variant="inline"
+            ariaLabel="Copy transaction hash"
+          />
+        </div>
       </td>
 
       {/* Bridge */}
@@ -166,7 +177,17 @@ export function TransactionCard({
       </div>
 
       <div className="text-xs text-stellar-blue font-mono">
-        {truncateHash(tx.txHash)}
+        <div className="flex items-center gap-2">
+          <span>{truncateHash(tx.txHash)}</span>
+          <CopyButton
+            value={tx.txHash}
+            label="Copy"
+            copiedLabel="Copied"
+            failedLabel="Failed"
+            variant="inline"
+            ariaLabel="Copy transaction hash"
+          />
+        </div>
       </div>
     </button>
   );

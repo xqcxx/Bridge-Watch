@@ -1,4 +1,3 @@
-import React from "react";
 import { useNotificationContext } from "../hooks/useNotificationContext";
 
 export default function NotificationPreferences() {

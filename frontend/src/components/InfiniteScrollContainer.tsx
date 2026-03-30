@@ -9,7 +9,7 @@ import {
   useInfiniteScroll,
   UseInfiniteScrollOptions,
 } from "../hooks/useInfiniteScroll";
-import { LoadingSpinner } from "./Skeleton/LoadingSpinner";
+import LoadingSpinner from "./Skeleton/LoadingSpinner";
 
 interface InfiniteScrollContainerProps<T> extends UseInfiniteScrollOptions<T> {
   renderItem: (item: T, index: number) => React.ReactNode;
@@ -53,7 +53,7 @@ export function InfiniteScrollContainer<T>({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="large" />
+        <LoadingSpinner message="Loading..." />
       </div>
     );
   }
@@ -150,7 +150,7 @@ export function InfiniteScrollContainer<T>({
       {/* Loading more indicator */}
       {isLoadingMore && (
         <div className="flex items-center justify-center py-8">
-          <LoadingSpinner size="medium" />
+          <LoadingSpinner message="Loading..." className="p-2" />
           <span className="ml-3 text-gray-600">Loading more {itemName}...</span>
         </div>
       )}

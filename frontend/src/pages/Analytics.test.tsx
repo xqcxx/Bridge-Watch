@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { axe } from "vitest-axe";
+import "@testing-library/jest-dom";
 import Analytics from "./Analytics";
 
 vi.mock("../hooks/useAssets", () => ({
@@ -34,9 +37,17 @@ vi.mock("../hooks/usePrices", () => ({
 }));
 
 describe("Analytics", () => {
-  it("renders comparison cards for selected assets", () => {
-    render(<Analytics />);
+  it("renders comparison cards for selected assets", async () => {
+    const { asFragment, container } = render(<Analytics />);
 
+    // Snapshot test
+    expect(asFragment()).toMatchSnapshot();
+
+    // Accessibility test
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+
+    expect(screen.getByText("Asset Comparison")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "USDC" }));
     fireEvent.click(screen.getByRole("button", { name: "XLM" }));
 
