@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  --stellar-bg: 248 250 252;
+  --stellar-card: 255 255 255;
+  --stellar-border: 226 232 240;
+  --stellar-text-primary: 15 23 42;
+  --stellar-text-secondary: 71 85 105;
+}
+
+.dark {
+  color-scheme: dark;
+  --stellar-bg: 11 14 26;
+  --stellar-card: 20 24 41;
+  --stellar-border: 30 35 64;
+  --stellar-text-primary: 255 255 255;
+  --stellar-text-secondary: 138 143 168;
+}
+
+html,
+body {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 200ms;
+  transition-timing-function: ease;
+}
+
 body {
   margin: 0;
   font-family:
@@ -16,6 +49,110 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ===================================================================
+   Print / PDF stylesheet (Issue #105)
+   =================================================================== */
+@media print {
+  /* Reset page dimensions and margins for clean printing */
+  @page {
+    size: A4 portrait;
+    margin: 18mm 14mm 22mm 14mm;
+  }
+
+  /* Hide non-report UI chrome */
+  nav,
+  .no-print,
+  button:not(.print-include),
+  select,
+  input,
+  .onboarding-dialog {
+    display: none !important;
+  }
+
+  /* White background, black text for ink savings */
+  body,
+  html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+
+  /* Remove dark card backgrounds */
+  .bg-stellar-dark,
+  .bg-stellar-card {
+    background: #ffffff !important;
+  }
+
+  /* Force borders to be visible on white paper */
+  .border-stellar-border {
+    border-color: #cccccc !important;
+  }
+
+  /* Ensure text colours are readable on white */
+  .text-white,
+  .text-stellar-text-primary {
+    color: #111111 !important;
+  }
+  .text-stellar-text-secondary {
+    color: #555555 !important;
+  }
+  .text-stellar-blue {
+    color: #0057ff !important;
+  }
+
+  /* Page break helpers */
+  .print-break-before {
+    page-break-before: always;
+    break-before: page;
+  }
+  .print-break-after {
+    page-break-after: always;
+    break-after: page;
+  }
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Printed report header / footer */
+  .print-header {
+    display: block !important;
+    border-bottom: 2px solid #0057ff;
+    padding-bottom: 8pt;
+    margin-bottom: 16pt;
+  }
+  .print-footer {
+    display: block !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid #cccccc;
+    padding-top: 4pt;
+    font-size: 8pt;
+    color: #666666;
+  }
+
+  /* Charts: allow SVG/canvas elements to print */
+  svg,
+  canvas {
+    max-width: 100% !important;
+  }
+
+  /* Expand grids to full width on print */
+  .grid {
+    display: block !important;
+  }
+  .grid > * {
+    margin-bottom: 12pt;
+    width: 100% !important;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block !important;
+  }
+}
 @keyframes skeleton-shimmer {
   0% {
     transform: translateX(-100%);
@@ -45,5 +182,9 @@ body {
     rgba(255, 255, 255, 0) 100%
   );
   animation: skeleton-shimmer 1.6s infinite;
+}
+
+.reduce-motion .skeleton::after {
+  animation: none;
 }
 

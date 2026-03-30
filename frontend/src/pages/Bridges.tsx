@@ -22,7 +22,7 @@ export default function Bridges() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white">Bridges</h1>
+        <h1 className="text-3xl font-bold text-stellar-text-primary">Bridges</h1>
         <p className="mt-2 text-stellar-text-secondary">
           Monitor cross-chain bridge status, supply consistency, and performance
         </p>
@@ -90,7 +90,7 @@ export default function Bridges() {
                 <th scope="col" className="pb-3">30d Uptime</th>
               </tr>
             </thead>
-            <tbody className="text-white">
+            <tbody className="text-stellar-text-primary">
               <tr>
                 <td colSpan={5} className="py-6 text-center text-stellar-text-secondary">
                   Performance data will appear once bridge monitoring is active

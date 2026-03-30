@@ -1,14 +1,56 @@
-import type { Asset, HealthScore, AssetWithHealth, TransactionPage, TransactionFilters } from "../types";
-
+import type {
+  ApiKeyRecord,
+  Asset,
+  AssetWithHealth,
+  Bridge,
+  BridgeStats,
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
+  HealthScore,
+  TransactionFilters,
+  TransactionPage,
+} from "../types";
 const API_BASE_URL = "/api/v1";
 
-async function fetchApi<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`);
-
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+async function fetchApi<T>(
+  endpoint: string,
+  init?: RequestInit,
+  apiKey?: string
+): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type") && init?.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (apiKey) {
+    headers.set("x-api-key", apiKey);
   }
 
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...init,
+    headers,
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const body = (await response.json()) as { error?: string; message?: string };
+      detail = body.error ?? body.message ?? "";
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    const suffix = detail ? `: ${detail}` : "";
+    throw new Error(`API error: ${response.status} ${response.statusText}${suffix}`);
+  }
+
+  return response.json();
+}
+
+/** Root health endpoint (not under /api/v1). */
+export async function getServerHealth(): Promise<{ status: string; timestamp: string }> {
+  const response = await fetch("/health");
+  if (!response.ok) {
+    throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
+  }
   return response.json();
 }
 
@@ -23,6 +65,20 @@ export function getAssetDetail(symbol: string) {
 
 export function getAssetHealth(symbol: string) {
   return fetchApi<HealthScore | null>(`/assets/${symbol}/health`);
+}
+
+export function getAssetHealthHistory(
+  symbol: string,
+  period: "24h" | "7d" | "30d" = "7d"
+) {
+  return fetchApi<
+    | {
+        symbol: string;
+        period: "24h" | "7d" | "30d";
+        points: Array<{ timestamp: string; score: number }>;
+      }
+    | null
+  >(`/assets/${symbol}/health/history?period=${period}`);
 }
 
 export async function getAssetsWithHealth(): Promise<AssetWithHealth[]> {
@@ -63,28 +119,11 @@ export function getAssetPrice(symbol: string) {
 
 // Bridges
 export function getBridges() {
-  return fetchApi<{
-    bridges: Array<{
-      name: string;
-      status: "healthy" | "degraded" | "down" | "unknown";
-      totalValueLocked: number;
-      supplyOnStellar: number;
-      supplyOnSource: number;
-      mismatchPercentage: number;
-    }>;
-  }>("/bridges");
+  return fetchApi<{ bridges: Bridge[] }>("/bridges");
 }
 
 export function getBridgeStats(bridge: string) {
-  return fetchApi<{
-    name: string;
-    volume24h: number;
-    volume7d: number;
-    volume30d: number;
-    totalTransactions: number;
-    averageTransferTime: number;
-    uptime30d: number;
-  } | null>(`/bridges/${bridge}/stats`);
+  return fetchApi<BridgeStats | null>(`/bridges/${bridge}/stats`);
 }
 
 // Transactions
@@ -117,4 +156,110 @@ export function exportTransactionsCsv(filters: TransactionFilters): string {
   params.set("format", "csv");
 
   return `${API_BASE_URL}/transactions/export?${params.toString()}`;
+}
+
+// API key management
+export function listApiKeys(apiKey: string) {
+  return fetchApi<{ keys: ApiKeyRecord[] }>("/admin/api-keys", undefined, apiKey);
+}
+
+export function createApiKey(
+  apiKey: string,
+  payload: CreateApiKeyRequest
+) {
+  return fetchApi<CreateApiKeyResponse>(
+    "/admin/api-keys",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    apiKey
+  );
+}
+
+export function rotateApiKey(apiKey: string, id: string) {
+  return fetchApi<CreateApiKeyResponse>(
+    `/admin/api-keys/${id}/rotate`,
+    { method: "POST" },
+    apiKey
+  );
+}
+
+export function revokeApiKey(apiKey: string, id: string) {
+  return fetchApi<{ key: ApiKeyRecord }>(
+    `/admin/api-keys/${id}/revoke`,
+    { method: "POST" },
+    apiKey
+  );
+}
+
+export function extendApiKey(apiKey: string, id: string, extraDays: number) {
+  return fetchApi<{ key: ApiKeyRecord }>(
+    `/admin/api-keys/${id}/extend`,
+    {
+      method: "POST",
+      body: JSON.stringify({ extraDays }),
+    },
+    apiKey
+  );
+}
+
+// Supply Chain
+export function getSupplyChainGraph() {
+  return fetchApi<import("../components/SupplyChainViz/types").SupplyChainGraph>("/supply-chain");
+}
+
+export function getSupplyChainNodes() {
+  return fetchApi<{ nodes: import("../components/SupplyChainViz/types").ChainNode[] }>("/supply-chain/nodes");
+}
+
+export function getSupplyChainEdges() {
+  return fetchApi<{ edges: import("../components/SupplyChainViz/types").BridgeEdge[] }>("/supply-chain/edges");
+}
+
+// Price Feeds
+export function getPriceFeeds() {
+  return fetchApi<{
+    prices: Array<{
+      symbol: string;
+      price: number;
+      confidence: number;
+      sources: number;
+      lastUpdated: string;
+    }>;
+  }>("/price-feeds");
+}
+
+export function getPriceFeed(symbol: string) {
+  return fetchApi<{
+    symbol: string;
+    price: number;
+    confidence: number;
+    sources: number;
+    lastUpdated: string;
+  }>(`/price-feeds/${symbol}`);
+}
+
+export function getPriceFeedComparison(symbol: string) {
+  return fetchApi<{
+    symbol: string;
+    consensus: number;
+    samples: Array<{
+      source: string;
+      price: number;
+      weight: number;
+      isOutlier: boolean;
+    }>;
+  }>(`/price-feeds/${symbol}/compare`);
+}
+
+export function getPriceFeedHealth() {
+  return fetchApi<{
+    sources: Array<{
+      name: string;
+      successRate: number;
+      avgLatencyMs: number;
+      lastSuccess: string | null;
+    }>;
+  }>("/price-feeds/health");
 }

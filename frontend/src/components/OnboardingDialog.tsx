@@ -97,7 +97,7 @@ export default function OnboardingDialog({ open, onClose, onComplete }: Props) {
         <div className="p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 id="onboarding-title" className="text-xl font-semibold text-white">
+              <h2 id="onboarding-title" className="text-xl font-semibold text-stellar-text-primary">
                 {step.title}
               </h2>
               <p id="onboarding-desc" className="sr-only">
@@ -108,7 +108,7 @@ export default function OnboardingDialog({ open, onClose, onComplete }: Props) {
               ref={closeBtnRef}
               type="button"
               onClick={onClose}
-              className="rounded-md px-2 py-1 text-sm text-stellar-text-secondary hover:text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+              className="rounded-md px-2 py-1 text-sm text-stellar-text-secondary hover:text-stellar-text-primary focus:outline-none focus:ring-2 focus:ring-stellar-blue"
               aria-label="Close onboarding"
             >
               ✕
@@ -121,7 +121,7 @@ export default function OnboardingDialog({ open, onClose, onComplete }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="text-sm text-stellar-text-secondary hover:text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue rounded-md px-2 py-1"
+              className="text-sm text-stellar-text-secondary hover:text-stellar-text-primary focus:outline-none focus:ring-2 focus:ring-stellar-blue rounded-md px-2 py-1"
             >
               Skip
             </button>
@@ -131,7 +131,7 @@ export default function OnboardingDialog({ open, onClose, onComplete }: Props) {
                 type="button"
                 onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
                 disabled={stepIndex === 0}
-                className="bg-stellar-card border border-stellar-border rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50 hover:bg-stellar-border focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+                className="bg-stellar-card border border-stellar-border rounded-lg px-3 py-2 text-sm text-stellar-text-primary disabled:opacity-50 hover:bg-stellar-border focus:outline-none focus:ring-2 focus:ring-stellar-blue"
               >
                 Back
               </button>

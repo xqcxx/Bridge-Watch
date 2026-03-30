@@ -126,22 +126,35 @@ stellar-bridge-watch/
 
 ## Quick Start
 
+### Automated Setup (Recommended)
+
 ```bash
 # Clone the repository
 git clone https://github.com/StellaBridge/Bridge-Watch.git
 cd Bridge-Watch
 
-# Install dependencies
-npm install
+# Run the setup script — handles everything
+./scripts/setup.sh
 
-# Configure environment variables
+# Start the full dev environment
+make dev
+```
+
+The setup script checks prerequisites, installs dependencies, configures `.env`, starts Docker services (PostgreSQL + Redis), runs database migrations and seeds, builds Soroban contracts, and generates IDE configuration. Run `./scripts/setup.sh --help` for all options.
+
+See [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) for detailed setup documentation, manual steps, and troubleshooting.
+
+### Manual Setup
+
+```bash
+git clone https://github.com/StellaBridge/Bridge-Watch.git
+cd Bridge-Watch
 cp .env.example .env
-
-# Start services with Docker Compose
-docker-compose up -d
-
-# Run the development server
-npm run dev
+npm install
+docker compose -f docker-compose.dev.yml up -d postgres redis
+npm run migrate --workspace=backend
+npm run seed --workspace=backend
+make dev
 ```
 
 ## API Endpoints (MVP)
@@ -155,6 +168,20 @@ GET  /api/v1/assets/:symbol/price      # Current price from all sources
 GET  /api/v1/bridges                   # Bridge status overview
 GET  /api/v1/bridges/:bridge/stats     # Bridge-specific statistics
 WS   /api/v1/ws                        # WebSocket for real-time updates
+```
+
+## Load Testing
+
+Bridge-Watch includes a k6-based load testing framework with scenario profiles for smoke, ramp-up, spike, and endurance testing.
+
+- Framework entry point: [load-tests/README.md](load-tests/README.md)
+- Methodology: [docs/load-testing-methodology.md](docs/load-testing-methodology.md)
+- Baselines: [docs/performance-baselines.md](docs/performance-baselines.md)
+
+Run a local smoke test (requires k6 installed):
+
+```bash
+npm run test:load
 ```
 
 ## Roadmap
@@ -235,6 +262,10 @@ Ways to contribute:
 - Review and test pull requests
 
 Please review the contribution guidelines before submitting a pull request.
+
+## Clipboard Utilities
+
+The frontend clipboard API and usage examples are documented in `docs/copy-clipboard.md`.
 
 ## Maintainer Commitment
 

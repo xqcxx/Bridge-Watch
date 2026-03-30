@@ -48,14 +48,14 @@ export default function BridgeStatusCard({
       aria-label={`View details for bridge ${name}`}
     >
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">{name}</h3>
+        <h3 className="text-lg font-semibold text-stellar-text-primary">{name}</h3>
         {getStatusBadge(status)}
       </div>
 
       <div className="space-y-3">
         <div className="flex justify-between">
           <span className="text-sm text-stellar-text-secondary">TVL</span>
-          <span className="text-sm text-white font-medium">
+          <span className="text-sm text-stellar-text-primary font-medium">
             {formatNumber(totalValueLocked)}
           </span>
         </div>
@@ -64,7 +64,7 @@ export default function BridgeStatusCard({
           <span className="text-sm text-stellar-text-secondary">
             Supply (Stellar)
           </span>
-          <span className="text-sm text-white font-medium">
+          <span className="text-sm text-stellar-text-primary font-medium">
             {supplyOnStellar.toLocaleString()}
           </span>
         </div>
@@ -73,7 +73,7 @@ export default function BridgeStatusCard({
           <span className="text-sm text-stellar-text-secondary">
             Supply (Source)
           </span>
-          <span className="text-sm text-white font-medium">
+          <span className="text-sm text-stellar-text-primary font-medium">
             {supplyOnSource.toLocaleString()}
           </span>
         </div>

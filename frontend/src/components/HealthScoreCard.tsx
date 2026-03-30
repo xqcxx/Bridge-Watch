@@ -1,5 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { HealthFactors, HealthStatus } from "../types";
+import Sparkline from "./Sparkline";
 
 interface HealthScoreCardProps {
   symbol: string;
@@ -56,6 +57,16 @@ function getTrendColor(trend: string | null): string {
   if (trend === "improving") return "text-green-400";
   if (trend === "deteriorating") return "text-red-400";
   return "text-stellar-text-secondary";
+}
+
+function stellarVarRgb(varName: string, fallbackRgb: string): string {
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return fallbackRgb;
+    return `rgb(${raw})`;
+  } catch {
+    return fallbackRgb;
+  }
 }
 
 const FACTOR_LABELS: Record<keyof HealthFactors, string> = {
@@ -126,7 +137,7 @@ export default function HealthScoreCard({
           {ASSET_ICONS[symbol] || symbol.charAt(0)}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-white truncate">{symbol}</h3>
+          <h3 className="text-lg font-semibold text-stellar-text-primary truncate">{symbol}</h3>
           {name && (
             <p className="text-sm text-stellar-text-secondary truncate">{name}</p>
           )}
@@ -157,13 +168,13 @@ export default function HealthScoreCard({
                 stroke="none"
               >
                 <Cell fill={statusColor} />
-                <Cell fill="#1E2340" />
+                <Cell fill={stellarVarRgb("--stellar-border", "rgb(30 35 64)")} />
               </Pie>
             </PieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span
-              className="text-3xl font-bold text-white"
+              className="text-3xl font-bold text-stellar-text-primary"
               aria-hidden="true"
             >
               {overallScore}
@@ -177,6 +188,17 @@ export default function HealthScoreCard({
             </span>
           </div>
         </div>
+      </div>
+
+      <div className="mb-4" aria-hidden="true">
+        <Sparkline
+          symbol={symbol}
+          metric="health"
+          period="7d"
+          height={40}
+          showMinMax
+          aria-label={`${symbol} health score trend sparkline`}
+        />
       </div>
 
       {!compact && (
@@ -208,7 +230,7 @@ export default function HealthScoreCard({
                         style={{ width: `${value}%`, backgroundColor: factorColor }}
                       />
                     </div>
-                    <span className="text-sm text-white w-7 text-right tabular-nums">
+                    <span className="text-sm text-stellar-text-primary w-7 text-right tabular-nums">
                       {value}
                     </span>
                   </div>

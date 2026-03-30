@@ -152,6 +152,15 @@ soroban contract deploy \
 
 ---
 
+## 3.1 Signature Verification Format
+
+- [x] **Signer format** – on-chain signers are registered with `signer_id` and `public_key` (`BytesN<32>`).
+- [x] **Payload canonicalization** – payload bytes include asset identifier and values; the contract uses `sha256` over the payload + signer context to prevent tampering.
+- [x] **Nonce replay protection** – each `SignerSignature` includes `nonce`; contract stores latest nonce per signer in `SignerNonce`.
+- [x] **Expiration** – signatures include `expiry` and are rejected if ledger time exceeds expiration.
+- [x] **Multi-sig threshold** – `SignatureThreshold` sets required signed approvals for batch operations.
+- [x] **Caching** – verified payload hashes are cached under `SignatureCache` to avoid repeated cryptographic processing.
+
 ## 4. Recommended Pre-Merge Checklist
 
 - [ ] Run `cargo test --release` – all contract unit tests pass

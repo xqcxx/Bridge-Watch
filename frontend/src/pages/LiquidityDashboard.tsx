@@ -1,0 +1,157 @@
+import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useLiquidity } from "../hooks/useLiquidity";
+import {
+  LiquidityDepthChart,
+  LiquidityByVenue,
+  LiquidityTrend,
+  PriceImpactCalculator,
+  PairSelector,
+} from "../components/liquidity";
+import type { TradingPair } from "../types/liquidity";
+
+export default function LiquidityDashboard() {
+  const [pair, setPair] = useLocalStorageState<TradingPair>(
+    "bridge-watch:liquidity-pair:v1",
+    "USDC/XLM"
+  );
+
+  const { depth, venues, history, isLoading, error, lastUpdated } =
+    useLiquidity(pair);
+
+  const totalLiquidity = venues.reduce((s, v) => s + v.totalLiquidity, 0);
+
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Liquidity</h1>
+          <p className="mt-1 text-stellar-text-secondary text-sm">
+            Aggregated depth across SDEX, StellarX AMM, and Phoenix
+          </p>
+        </div>
+        <PairSelector value={pair} onChange={setPair} />
+      </header>
+
+      {error && (
+        <div
+          role="alert"
+          className="bg-red-900/30 border border-red-700 rounded-lg px-4 py-3 text-sm text-red-300"
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          {
+            label: "Total Liquidity",
+            value: totalLiquidity
+              ? `$${totalLiquidity.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : "--",
+          },
+          {
+            label: "Mid Price",
+            value: depth ? depth.midPrice.toFixed(7) : "--",
+          },
+          {
+            label: "Bid Levels",
+            value: depth ? depth.bids.length.toString() : "--",
+          },
+          {
+            label: "Ask Levels",
+            value: depth ? depth.asks.length.toString() : "--",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-stellar-card border border-stellar-border rounded-lg p-4"
+          >
+            <p className="text-xs text-stellar-text-secondary">{stat.label}</p>
+            <p className="mt-1 text-xl font-bold text-white">{stat.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Depth chart */}
+      <section
+        className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+        aria-label={`${pair} order book depth`}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Order Book Depth</h2>
+          {lastUpdated && (
+            <span className="text-xs text-stellar-text-secondary">
+              Updated {new Date(lastUpdated).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+        <LiquidityDepthChart data={depth} isLoading={isLoading} pair={pair} />
+      </section>
+
+      {/* Venue breakdown + price impact */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section
+          className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+          aria-label="Liquidity by venue"
+        >
+          <h2 className="text-lg font-semibold text-white mb-4">
+            Liquidity by Venue
+          </h2>
+          <LiquidityByVenue venues={venues} isLoading={isLoading} />
+
+          {/* Venue table */}
+          {venues.length > 0 && (
+            <table className="mt-4 w-full text-xs" aria-label="Venue liquidity breakdown">
+              <thead>
+                <tr className="text-stellar-text-secondary border-b border-stellar-border">
+                  <th className="text-left pb-2">Venue</th>
+                  <th className="text-right pb-2">Bid Depth</th>
+                  <th className="text-right pb-2">Ask Depth</th>
+                  <th className="text-right pb-2">Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {venues.map((v) => (
+                  <tr key={v.venue} className="border-b border-stellar-border/50">
+                    <td className="py-2 text-white">{v.venue}</td>
+                    <td className="py-2 text-right text-stellar-text-secondary">
+                      ${v.bidDepth.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="py-2 text-right text-stellar-text-secondary">
+                      ${v.askDepth.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="py-2 text-right text-white font-medium">
+                      {v.share.toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section
+          className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+          aria-label="Price impact calculator"
+        >
+          <h2 className="text-lg font-semibold text-white mb-4">
+            Price Impact Calculator
+          </h2>
+          <PriceImpactCalculator depth={depth} />
+        </section>
+      </div>
+
+      {/* Trend chart */}
+      <section
+        className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+        aria-label="Liquidity trend"
+      >
+        <h2 className="text-lg font-semibold text-white mb-4">
+          Liquidity Trend
+        </h2>
+        <LiquidityTrend history={history} isLoading={isLoading} />
+      </section>
+    </div>
+  );
+}

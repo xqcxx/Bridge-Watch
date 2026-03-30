@@ -9,6 +9,28 @@
       name="description"
       content="Open-source monitoring platform for cross-chain asset bridges, DEX liquidity, and bridged asset health on the Stellar network"
     />
+    <script>
+      (function () {
+        try {
+          var key = "bridge-watch:theme:v1";
+          var stored = localStorage.getItem(key);
+          var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
+
+          var root = document.documentElement;
+          if (resolved === "dark") root.classList.add("dark");
+          else root.classList.remove("dark");
+
+          root.setAttribute("data-theme", resolved);
+          root.setAttribute("data-theme-mode", mode);
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-theme-mode", "system");
+        }
+      })();
+    </script>
   </head>
   <body class="bg-stellar-dark text-stellar-text-primary">
     <div id="root"></div>

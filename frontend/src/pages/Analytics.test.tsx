@@ -46,6 +46,14 @@ describe("Analytics", () => {
       </QueryClientProvider>
     );
 
+    // Snapshot test
+    expect(asFragment()).toMatchSnapshot();
+
+    // Accessibility test
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+
+    expect(screen.getByText("Asset Comparison")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "USDC" }));
     fireEvent.click(screen.getByRole("button", { name: "XLM" }));
 
