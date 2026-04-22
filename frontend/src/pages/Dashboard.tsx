@@ -1,15 +1,38 @@
 import { useState, useMemo, useCallback, Suspense } from "react";
 import { Link } from "react-router-dom";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAssetsWithHealth, useHealthUpdater } from "../hooks/useAssets";
 import { useBridges } from "../hooks/useBridges";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useRefreshControls } from "../hooks/useRefreshControls";
 import HealthScoreCard from "../components/HealthScoreCard";
 import BridgeStatusCard from "../components/BridgeStatusCard";
+import QuickStatsWidget from "../components/QuickStats/QuickStatsWidget";
 import OnboardingDialog from "../components/OnboardingDialog";
 import RefreshControls from "../components/RefreshControls";
+import WidgetGallery from "../components/dashboard/WidgetGallery";
 import { SkeletonCard, ErrorBoundary } from "../components/Skeleton";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import {
+  useDashboardLayout,
+  type DashboardWidgetId,
+} from "../hooks/useDashboardLayout";
 import type {
   AssetWithHealth,
   SortField,
@@ -45,6 +68,46 @@ function filterAssets(assets: AssetWithHealth[], status: FilterStatus): AssetWit
     const assetStatus = getHealthStatus(asset.health?.overallScore ?? null);
     return assetStatus === status;
   });
+}
+
+function SortableWidgetRow({
+  id,
+  label,
+}: {
+  id: DashboardWidgetId;
+  label: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.8 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center justify-between rounded-md border border-stellar-border bg-stellar-dark px-3 py-2"
+    >
+      <span className="text-sm text-stellar-text-primary">{label}</span>
+      <button
+        type="button"
+        className="rounded px-2 py-1 text-xs text-stellar-text-secondary hover:text-stellar-text-primary"
+        aria-label="Drag to reorder widget"
+        {...attributes}
+        {...listeners}
+      >
+        Drag
+      </button>
+    </div>
+  );
+}
+
+function widgetSizeClasses(size: "small" | "medium" | "large"): string {
+  if (size === "small") return "lg:col-span-1";
+  if (size === "large") return "lg:col-span-3";
+  return "lg:col-span-2";
 }
 
 export default function Dashboard() {
@@ -84,7 +147,28 @@ export default function Dashboard() {
     "bridge-watch:onboarding:v1",
     false
   );
+  const [customizationOpen, setCustomizationOpen] = useState(false);
+  const [layoutPayload, setLayoutPayload] = useState("");
+  const [layoutMessage, setLayoutMessage] = useState<string | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(!onboardingCompleted);
+
+  const {
+    layout,
+    widgetDefinitions,
+    enabledWidgets,
+    setWidgetEnabled,
+    setWidgetSize,
+    reorderWidgets,
+    applyPreset,
+    resetToDefault,
+    exportLayout,
+    importLayout,
+  } = useDashboardLayout();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const handleHealthUpdate = useCallback(
     (data: unknown) => {
@@ -123,6 +207,38 @@ export default function Dashboard() {
     );
   }, [assetsData]);
 
+  const widgetMap = useMemo(
+    () => new Map(widgetDefinitions.map((definition) => [definition.id, definition])),
+    [widgetDefinitions],
+  );
+
+  const onWidgetDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const currentIds = layout.widgets.map((widget) => widget.id);
+      const oldIndex = currentIds.indexOf(active.id as DashboardWidgetId);
+      const newIndex = currentIds.indexOf(over.id as DashboardWidgetId);
+      if (oldIndex < 0 || newIndex < 0) return;
+
+      reorderWidgets(arrayMove(currentIds, oldIndex, newIndex));
+    },
+    [layout.widgets, reorderWidgets],
+  );
+
+  const renderedWidgets = useMemo(
+    () =>
+      layout.widgets
+        .filter((widget) => widget.enabled)
+        .map((widget) => ({
+          ...widget,
+          definition: widgetMap.get(widget.id),
+        }))
+        .filter((widget) => Boolean(widget.definition)),
+    [layout.widgets, widgetMap],
+  );
+
   return (
     <div className="space-y-8">
       <OnboardingDialog
@@ -139,6 +255,43 @@ export default function Dashboard() {
         <p className="mt-2 text-stellar-text-secondary">
           Real-time monitoring of bridged assets on the Stellar network
         </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setCustomizationOpen((value) => !value)}
+            className="rounded-md border border-stellar-border px-3 py-2 text-sm text-stellar-text-secondary hover:text-stellar-text-primary"
+          >
+            {customizationOpen ? "Close customization" : "Customize widgets"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLayoutPayload(exportLayout());
+              setLayoutMessage("Layout exported to editor below.");
+            }}
+            className="rounded-md border border-stellar-border px-3 py-2 text-sm text-stellar-text-secondary hover:text-stellar-text-primary"
+          >
+            Export layout
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const result = importLayout(layoutPayload);
+              setLayoutMessage(result.message);
+            }}
+            className="rounded-md border border-stellar-border px-3 py-2 text-sm text-stellar-text-secondary hover:text-stellar-text-primary"
+          >
+            Import layout
+          </button>
+          <button
+            type="button"
+            onClick={() => resetToDefault()}
+            className="rounded-md border border-stellar-border px-3 py-2 text-sm text-stellar-text-secondary hover:text-stellar-text-primary"
+          >
+            Reset default
+          </button>
+        </div>
+        {layoutMessage && <p className="mt-2 text-xs text-stellar-text-secondary">{layoutMessage}</p>}
         {!onboardingOpen && !onboardingCompleted && (
           <button
             type="button"
@@ -159,6 +312,79 @@ export default function Dashboard() {
         )}
       </header>
 
+      {customizationOpen && (
+        <section className="space-y-4 rounded-lg border border-stellar-border bg-stellar-card p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-stellar-text-primary">Preset layouts</p>
+            <button
+              type="button"
+              onClick={() => applyPreset("default")}
+              className="rounded-md border border-stellar-border px-2 py-1 text-xs text-stellar-text-secondary"
+            >
+              Default
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset("compact")}
+              className="rounded-md border border-stellar-border px-2 py-1 text-xs text-stellar-text-secondary"
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset("operations")}
+              className="rounded-md border border-stellar-border px-2 py-1 text-xs text-stellar-text-secondary"
+            >
+              Operations
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset("analyst")}
+              className="rounded-md border border-stellar-border px-2 py-1 text-xs text-stellar-text-secondary"
+            >
+              Analyst
+            </button>
+          </div>
+
+          <WidgetGallery
+            definitions={widgetDefinitions}
+            layout={layout.widgets}
+            onToggle={setWidgetEnabled}
+            onResize={setWidgetSize}
+          />
+
+          <div className="rounded-lg border border-stellar-border bg-stellar-dark p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-stellar-text-secondary">
+              Drag to reorder
+            </h3>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onWidgetDragEnd}>
+              <SortableContext items={layout.widgets.map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+                <div className="mt-3 space-y-2">
+                  {layout.widgets.map((widget) => (
+                    <SortableWidgetRow
+                      key={widget.id}
+                      id={widget.id}
+                      label={widgetMap.get(widget.id)?.title ?? widget.id}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+
+          <label htmlFor="layout-json" className="block text-xs text-stellar-text-secondary">
+            Layout import/export payload
+          </label>
+          <textarea
+            id="layout-json"
+            value={layoutPayload}
+            onChange={(event) => setLayoutPayload(event.target.value)}
+            rows={5}
+            className="w-full rounded-md border border-stellar-border bg-stellar-dark px-3 py-2 text-xs text-stellar-text-primary focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+          />
+        </section>
+      )}
+
       <RefreshControls
         autoRefreshEnabled={refreshControls.preferences.autoRefreshEnabled}
         onAutoRefreshEnabledChange={refreshControls.setAutoRefreshEnabled}
@@ -175,7 +401,22 @@ export default function Dashboard() {
         lastUpdatedAt={refreshControls.lastUpdatedAt}
       />
 
-      <section aria-labelledby="asset-health-heading">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {renderedWidgets.some((widget) => widget.id === "quick-stats") && (
+          <section className={widgetSizeClasses(layout.widgets.find((widget) => widget.id === "quick-stats")?.size ?? "medium")}> 
+            <QuickStatsWidget
+              assets={assetsData ?? []}
+              bridges={bridgesData?.bridges ?? []}
+              isLoading={assetsLoading || bridgesLoading}
+            />
+          </section>
+        )}
+
+        {renderedWidgets.some((widget) => widget.id === "asset-health") && (
+          <section
+            aria-labelledby="asset-health-heading"
+            className={widgetSizeClasses(layout.widgets.find((widget) => widget.id === "asset-health")?.size ?? "large")}
+          >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <h2 id="asset-health-heading" className="text-xl font-semibold text-stellar-text-primary">
             Asset Health
@@ -287,9 +528,14 @@ export default function Dashboard() {
             )}
           </Suspense>
         </ErrorBoundary>
-      </section>
+          </section>
+        )}
 
-      <section aria-labelledby="bridge-status-heading">
+        {renderedWidgets.some((widget) => widget.id === "bridge-status") && (
+          <section
+            aria-labelledby="bridge-status-heading"
+            className={widgetSizeClasses(layout.widgets.find((widget) => widget.id === "bridge-status")?.size ?? "medium")}
+          >
         <div className="flex items-center justify-between mb-4">
           <h2 id="bridge-status-heading" className="text-xl font-semibold text-stellar-text-primary">
             Bridge Status
@@ -327,7 +573,22 @@ export default function Dashboard() {
             )}
           </Suspense>
         </ErrorBoundary>
-      </section>
+          </section>
+        )}
+      </div>
+
+      {enabledWidgets.length === 0 && (
+        <section className="rounded-lg border border-stellar-border bg-stellar-card p-6 text-center">
+          <p className="text-stellar-text-secondary">All widgets are currently hidden.</p>
+          <button
+            type="button"
+            onClick={() => setCustomizationOpen(true)}
+            className="mt-3 text-sm text-stellar-blue hover:underline"
+          >
+            Open customization panel
+          </button>
+        </section>
+      )}
     </div>
   );
 }
