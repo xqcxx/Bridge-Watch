@@ -57,7 +57,14 @@ i18n
 
     // Missing key handling
     saveMissing: process.env.NODE_ENV === "development",
-    missingKeyHandler: (lng, ns, key) => {
+    missingKeyHandler: (
+      lng: readonly string[],
+      ns: string,
+      key: string,
+      _fallbackValue: string,
+      _updateMissing: boolean,
+      _options: unknown,
+    ) => {
       if (process.env.NODE_ENV === "development") {
         console.warn(`Missing translation: ${lng}.${ns}.${key}`);
       }

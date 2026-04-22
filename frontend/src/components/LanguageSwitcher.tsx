@@ -3,7 +3,7 @@
  * Allows users to change the application language
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from "../i18n/config";
 
@@ -23,7 +23,8 @@ export function LanguageSwitcher() {
     const language = SUPPORTED_LANGUAGES.find(
       (lang) => lang.code === languageCode,
     );
-    document.documentElement.dir = language?.rtl ? "rtl" : "ltr";
+    document.documentElement.dir =
+      language && "rtl" in language && language.rtl === true ? "rtl" : "ltr";
   };
 
   return (
