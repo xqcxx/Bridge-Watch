@@ -91,10 +91,19 @@ export default function Navbar({ isLoading = false }: NavbarProps) {
               </div>
             </div>
 
-            {/* Right side: global search, theme toggle, watchlist, notifications, network status */}
+            {/* Right side: global search, theme toggle, shortcuts hint, network status */}
             <div className="flex items-center gap-3">
               <GlobalSearch />
               <ThemeToggle />
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("bridgewatch:open-shortcuts"))}
+                aria-label="Show keyboard shortcuts (?)"
+                title="Keyboard shortcuts (?)"
+                className="hidden lg:inline-flex items-center justify-center w-7 h-7 rounded border border-stellar-border bg-stellar-dark text-stellar-text-secondary hover:text-stellar-text-primary hover:border-stellar-blue/60 font-mono text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+              >
+                ?
+              </button>
               <span className="text-sm text-stellar-text-secondary hidden sm:block">Stellar Network Monitor</span>
             </div>
 
