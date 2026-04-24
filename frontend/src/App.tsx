@@ -5,6 +5,7 @@ import AssetDetail from "./pages/AssetDetail";
 import Bridges from "./pages/Bridges";
 import Analytics from "./pages/Analytics";
 import WatchlistsPage from "./pages/Watchlists";
+import Incidents from "./pages/Incidents";
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/assets/:symbol" element={<AssetDetail />} />
         <Route path="/bridges" element={<Bridges />} />
+        <Route path="/incidents" element={<Incidents />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/watchlists" element={<WatchlistsPage />} />
       </Route>
