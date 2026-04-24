@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: bridge-watch-monitoring
+    orgId: 1
+    folder: Bridge Watch
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 15
+    options:
+      path: /var/lib/grafana/dashboards

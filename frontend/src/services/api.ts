@@ -104,6 +104,7 @@ export function getAssetLiquidity(symbol: string) {
       bidDepth: number;
       askDepth: number;
       totalLiquidity: number;
+      timestamp?: string;
     }>;
   } | null>(`/assets/${symbol}/liquidity`);
 }
@@ -113,6 +114,7 @@ export function getAssetPrice(symbol: string) {
     symbol: string;
     vwap: number;
     sources: Array<{ source: string; price: number; timestamp: string }>;
+    history?: Array<{ source: string; price: number; timestamp: string }>;
     deviation: number;
     lastUpdated: string;
   } | null>(`/assets/${symbol}/price`);

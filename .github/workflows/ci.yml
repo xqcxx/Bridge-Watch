@@ -55,6 +55,16 @@ jobs:
       - name: Build backend
         run: npm --workspace=backend run build
 
+      - name: Run migrations
+        run: npm --workspace=backend run migrate
+        env:
+          NODE_ENV: test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: bridge_watch_test
+          POSTGRES_USER: bridge_watch
+          POSTGRES_PASSWORD: test_password
+
       - name: Run backend tests
         run: npm --workspace=backend run test -- --coverage
         env:

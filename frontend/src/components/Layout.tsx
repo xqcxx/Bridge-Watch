@@ -1,12 +1,31 @@
+import { useState, useCallback, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
 import { Breadcrumb } from "./Breadcrumb";
 import { ComponentErrorBoundary } from "./ErrorBoundary";
+import ShortcutHelp from "./ShortcutHelp";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 
 export default function Layout() {
   const { pathname } = useLocation();
-  // Don't show breadcrumbs on the main dashboard (it's the home page)
   const showBreadcrumbs = pathname !== "/dashboard";
+
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const openHelp = useCallback(() => setShortcutHelpOpen(true), []);
+  const closeHelp = useCallback(() => setShortcutHelpOpen(false), []);
+
+  // Listen for open-shortcuts event dispatched by Navbar "?" button
+  useEffect(() => {
+    window.addEventListener("bridgewatch:open-shortcuts", openHelp);
+    return () => window.removeEventListener("bridgewatch:open-shortcuts", openHelp);
+  }, [openHelp]);
+
+  // Forward "/" shortcut to GlobalSearch via custom event (avoids tight coupling)
+  const openSearch = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("bridgewatch:open-search"));
+  }, []);
+
+  useKeyboardShortcuts({ onOpenHelp: openHelp, onOpenSearch: openSearch });
 
   return (
     <div className="min-h-screen bg-stellar-dark">
@@ -21,6 +40,8 @@ export default function Layout() {
           <Outlet />
         </ComponentErrorBoundary>
       </main>
+
+      <ShortcutHelp isOpen={shortcutHelpOpen} onClose={closeHelp} />
     </div>
   );
 }
