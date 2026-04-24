@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import ChartTooltip from "./Tooltip/ChartTooltip.js";
 import { useMemo } from "react";
 import { useTimeRange } from "../hooks/useTimeRange";
 import { filterSeriesByTimeRange } from "../utils/timeRange";
@@ -122,16 +123,15 @@ export default function PriceChart({
           <XAxis dataKey="timestamp" stroke={theme.axis} tick={{ fontSize: 12 }} />
           <YAxis stroke={theme.axis} tick={{ fontSize: 12 }} domain={["auto", "auto"]} />
           <Tooltip
-            contentStyle={{
-              backgroundColor: theme.tooltipBg,
-              border: `1px solid ${theme.grid}`,
-              borderRadius: "8px",
-              color: theme.tooltipText,
-            }}
-            formatter={(value: number | string, name: string) => [
-              typeof value === "number" ? `$${value.toFixed(4)}` : value,
-              name,
-            ]}
+            content={
+              <ChartTooltip
+                labelFormatter={(lbl) => new Date(lbl).toLocaleString()}
+                formatter={(value) =>
+                  typeof value === "number" ? `$${value.toFixed(4)}` : String(value)
+                }
+                showCopy
+              />
+            }
           />
           <Legend />
           {sources.map((source) => (
