@@ -13,6 +13,16 @@ export interface BridgeIncident {
   title: string;
   description: string;
   sourceUrl: string | null;
+  sourceType: string | null;
+  sourceExternalId: string | null;
+  sourceRepository: string | null;
+  sourceRepoAvatarUrl: string | null;
+  sourceActor: string | null;
+  sourceAttribution: Record<string, unknown>;
+  requiresManualReview: boolean;
+  ingestionAttemptCount: number;
+  lastIngestionError: string | null;
+  normalizedFingerprint: string | null;
   followUpActions: string[];
   occurredAt: string;
   resolvedAt: string | null;

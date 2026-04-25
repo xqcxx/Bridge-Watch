@@ -73,13 +73,26 @@ function IncidentCard({ incident, isUnread, onMarkRead }: IncidentCardProps) {
             {incident.title}
           </h3>
 
-          <div className="flex flex-wrap gap-2 mt-1">
+          <div className="flex flex-wrap gap-2 mt-1 items-center">
             <span className="text-xs text-stellar-text-muted">
               Bridge: <span className="text-stellar-text-secondary">{incident.bridgeId}</span>
             </span>
             {incident.assetCode && (
               <span className="text-xs text-stellar-text-muted">
                 Asset: <span className="text-stellar-text-secondary">{incident.assetCode}</span>
+              </span>
+            )}
+            {incident.sourceRepository && (
+              <span className="text-xs text-stellar-text-muted inline-flex items-center gap-1">
+                {incident.sourceRepoAvatarUrl && (
+                  <img
+                    src={incident.sourceRepoAvatarUrl}
+                    alt="Repository avatar"
+                    className="w-4 h-4 rounded-full"
+                    loading="lazy"
+                  />
+                )}
+                Repo: <span className="text-stellar-text-secondary">{incident.sourceRepository}</span>
               </span>
             )}
           </div>
@@ -104,21 +117,31 @@ function IncidentCard({ incident, isUnread, onMarkRead }: IncidentCardProps) {
                 </div>
               )}
 
-              {incident.sourceUrl && (
-                <a
-                  href={incident.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-stellar-blue hover:underline inline-flex items-center gap-1"
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label="Open incident source link"
-                >
-                  Source link
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </a>
+              {(incident.sourceUrl || incident.sourceType || incident.sourceActor) && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-stellar-text-muted">
+                  {incident.sourceType && (
+                    <span className="uppercase tracking-wide px-2 py-0.5 rounded border border-stellar-border bg-stellar-card">
+                      {incident.sourceType}
+                    </span>
+                  )}
+                  {incident.sourceActor && <span>Actor: {incident.sourceActor}</span>}
+                  {incident.sourceUrl && (
+                    <a
+                      href={incident.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-stellar-blue hover:underline inline-flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Open incident source link"
+                    >
+                      Source link
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
               )}
 
               {incident.resolvedAt && (
