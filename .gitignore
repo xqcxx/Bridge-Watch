@@ -31,6 +31,9 @@ Thumbs.db
 
 # Testing
 coverage/
+playwright-report/
+test-results/
+blob-report/
 load-tests/results/*.json
 load-tests/results/*.txt
 load-tests/results/*.md

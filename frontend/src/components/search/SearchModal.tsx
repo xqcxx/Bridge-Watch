@@ -150,7 +150,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search assets, bridges, pages…"
+            placeholder="Search assets, bridges, incidents, alerts, pages..."
             className="flex-1 bg-transparent py-4 text-white placeholder-stellar-text-secondary text-sm outline-none"
             aria-autocomplete="list"
             aria-controls="search-results-list"
@@ -243,7 +243,7 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
 
           {!showResults && !showRecent && (
             <div className="px-4 py-8 text-center text-xs text-stellar-text-secondary">
-              Start typing to search across assets, bridges, and pages.
+              Start typing to search across assets, bridges, incidents, alerts, and pages.
             </div>
           )}
         </div>

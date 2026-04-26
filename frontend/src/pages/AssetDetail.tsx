@@ -1,198 +1,136 @@
-import { useState, Suspense } from "react";
 import { useParams } from "react-router-dom";
-import { useAssetDetail } from "../hooks/useAssetDetail";
-import AssetHeader from "../components/AssetHeader";
-import HealthBreakdown from "../components/HealthBreakdown";
-import { EnhancedPriceChart } from "../components/PriceChart";
+import { usePrices } from "../hooks/usePrices";
+import { useLiquidity } from "../hooks/useLiquidity";
+import HealthScoreCard from "../components/HealthScoreCard";
+import PriceChart from "../components/PriceChart";
 import LiquidityDepthChart from "../components/LiquidityDepthChart";
-import type { DataTableColumnDef } from "../components/DataTable";
-import { DataTable } from "../components/DataTable";
-import type { CellContext } from "@tanstack/react-table";
-import { ErrorBoundary, LoadingSpinner } from "../components/Skeleton";
-import VolumeAnalytics from "../components/VolumeAnalytics";
-import AlertConfigSection from "../components/AlertConfigSection";
-
-enum TabId {
-  Overview = "overview",
-  Liquidity = "liquidity",
-  Volume = "volume",
-  Alerts = "alerts"
-}
+import { TimeRangeSelector } from "../components/TimeRangeSelector";
+import AddToWatchlistButton from "../components/watchlist/AddToWatchlistButton";
 
 export default function AssetDetail() {
   const { symbol } = useParams<{ symbol: string }>();
-  const [activeTab, setActiveTab] = useState<TabId>(TabId.Overview);
-
-  const {
-    assetInfo,
-    health,
-    priceHistory,
-    priceSources,
-    liquidity,
-    volume,
-    healthHistory,
-    alerts,
-    timeframe,
-    setTimeframe,
-  } = useAssetDetail(symbol ?? "");
-
-  const priceSourceRows = (priceSources.data ?? []) as Array<{
-    source: string;
-    price: number;
-    timestamp: string;
-  }>;
-
-  const priceSourceColumns: Array<
-    DataTableColumnDef<{
-      source: string;
-      price: number;
-      timestamp: string;
-    }>
-  > = [
-    {
-      id: "source",
-      accessorKey: "source",
-      header: "Source",
-      filterType: "text",
-    },
-    {
-      id: "price",
-      accessorKey: "price",
-      header: "Price",
-      filterType: "numberRange",
-      cell: (
-        ctx: CellContext<
-          { source: string; price: number; timestamp: string },
-          unknown
-        >
-      ) =>
-        `$${Number(ctx.getValue()).toFixed(4)}`,
-    },
-    {
-      id: "timestamp",
-      accessorKey: "timestamp",
-      header: "Last Updated",
-      filterType: "text",
-    },
-  ];
+  const { data: priceData, isLoading: priceLoading } = usePrices(symbol ?? "");
+  const { data: liquidityData, isLoading: liquidityLoading } = useLiquidity(
+    symbol ?? ""
+  );
 
   if (!symbol) {
-    return <div className="text-stellar-text-secondary p-8">No asset symbol provided.</div>;
+    return (
+      <div className="text-stellar-text-secondary">
+        No asset symbol provided.
+      </div>
+    );
   }
 
   return (
-    <ErrorBoundary onRetry={() => window.location.reload()}>
-      <Suspense
-        fallback={
-          <LoadingSpinner
-            message={`Loading ${symbol} details...`}
-            progress={25}
-            className="max-w-lg mx-auto mt-20"
-          />
-        }
-      >
-        <div className="space-y-8 pb-12">
-          <AssetHeader
-            symbol={symbol}
-            assetInfo={assetInfo.data}
-            health={health.data}
-            isLoading={assetInfo.isLoading}
-          />
-
-          <div className="flex space-x-1 bg-stellar-card/50 p-1 rounded-xl border border-stellar-border w-fit">
-            {Object.values(TabId).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === tab
-                    ? "bg-stellar-primary text-white shadow-lg"
-                    : "text-stellar-text-secondary hover:text-white hover:bg-white/5"
-                  }`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === TabId.Overview && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <HealthBreakdown
-                  factors={health.data?.factors ?? null}
-                  history={healthHistory.data?.points ?? []}
-                  isHistoryLoading={healthHistory.isLoading}
-                />
-                <div className="lg:col-span-2">
-                  <EnhancedPriceChart
-                    symbol={symbol}
-                    data={priceHistory.data ?? []}
-                    sources={priceSources.data}
-                    timeframe={timeframe}
-                    onTimeframeChange={setTimeframe}
-                    isLoading={priceHistory.isLoading}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-stellar-card border border-stellar-border rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">Supply Verification</h3>
-                  {/* Supply info would go here */}
-                  <div className="text-stellar-text-secondary text-sm">
-                    Supply data monitoring is active. No critical mismatches detected.
-                  </div>
-                </div>
-              </div>
-
-              <DataTable
-                data={priceSourceRows}
-                columns={priceSourceColumns}
-                isLoading={priceSources.isLoading}
-                title="Price Sources"
-                description={`Price sources for ${symbol} including last update times`}
-                pageSizeOptions={[10, 20, 50]}
-                filenameBase={`${symbol}-price-sources`}
-                enableRowSelection={true}
-                enableMultiSort={true}
-                enableColumnReorder={true}
-                enableVirtualization={true}
-                rowActions={{
-                  items: [
-                    {
-                      id: "copy-source",
-                      label: "Copy source",
-                      onSelect: (row) => {
-                        void navigator.clipboard.writeText(row.source);
-                      },
-                    },
-                  ],
-                }}
-              />
-            </div>
-          )}
-
-          {activeTab === TabId.Liquidity && (
-            <div className="space-y-6">
-              <LiquidityDepthChart
-                symbol={symbol}
-                data={liquidity.data ?? []}
-                isLoading={liquidity.isLoading}
-              />
-            </div>
-          )}
-
-          {activeTab === TabId.Volume && (
-            <VolumeAnalytics data={volume.data} isLoading={volume.isLoading} />
-          )}
-
-          {activeTab === TabId.Alerts && (
-            <AlertConfigSection
-              alerts={alerts.data}
-              isLoading={alerts.isLoading}
-            />
-          )}
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold text-white">{symbol}</h1>
+          <AddToWatchlistButton symbol={symbol} className="text-sm" />
         </div>
-      </Suspense>
-    </ErrorBoundary>
+        <p className="mt-2 text-stellar-text-secondary">
+          Detailed monitoring for {symbol} on the Stellar network
+        </p>
+      </div>
+
+      {/* Health Score */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <HealthScoreCard
+          symbol={symbol}
+          overallScore={null}
+          factors={null}
+          trend={null}
+        />
+        <div className="lg:col-span-2">
+          <TimeRangeSelector chartId={`price-${symbol}`} title="Price chart range" />
+          <PriceChart
+            symbol={symbol}
+            data={priceData?.history ?? []}
+            isLoading={priceLoading}
+            chartId={`price-${symbol}`}
+          />
+        </div>
+      </div>
+
+      {/* Liquidity Depth */}
+      <div className="space-y-3">
+        <TimeRangeSelector
+          chartId={`liquidity-${symbol}`}
+          title="Liquidity chart range"
+          showApplyGlobally={false}
+        />
+        <LiquidityDepthChart
+          symbol={symbol}
+          data={liquidityData?.sources ?? []}
+          isLoading={liquidityLoading}
+          chartId={`liquidity-${symbol}`}
+        />
+      </div>
+
+      {/* Price Sources Table */}
+      <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">
+          Price Sources
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-stellar-text-secondary border-b border-stellar-border">
+                <th className="pb-3 pr-4">Source</th>
+                <th className="pb-3 pr-4">Price</th>
+                <th className="pb-3 pr-4">Last Updated</th>
+                <th className="pb-3">Deviation</th>
+              </tr>
+            </thead>
+            <tbody className="text-white">
+              {priceData?.sources && priceData.sources.length > 0 ? (
+                priceData.sources.map(
+                  (source: {
+                    source: string;
+                    price: number;
+                    timestamp: string;
+                  }) => (
+                    <tr
+                      key={source.source}
+                      className="border-b border-stellar-border"
+                    >
+                      <td className="py-3 pr-4">{source.source}</td>
+                      <td className="py-3 pr-4">
+                        ${source.price.toFixed(4)}
+                      </td>
+                      <td className="py-3 pr-4 text-stellar-text-secondary">
+                        {source.timestamp}
+                      </td>
+                      <td className="py-3">--</td>
+                    </tr>
+                  )
+                )
+              ) : (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="py-6 text-center text-stellar-text-secondary"
+                  >
+                    No price source data available
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
+}
+
+function PriceImpactCalculatorWrapper({ symbol }: { symbol: string }) {
+  // Most assets are traded against XLM in this app
+  const pair: TradingPair = symbol === "XLM" ? "USDC/XLM" : (`${symbol}/XLM` as any);
+  const { depth, isLoading } = useLiquidity(pair);
+
+  if (isLoading && !depth) return <LoadingSpinner message="Loading liquidity data..." />;
+
+  return <PriceImpactCalculator depth={depth} />;
 }

@@ -104,6 +104,7 @@ export function getAssetLiquidity(symbol: string) {
       bidDepth: number;
       askDepth: number;
       totalLiquidity: number;
+      timestamp?: string;
     }>;
   } | null>(`/assets/${symbol}/liquidity`);
 }
@@ -113,6 +114,7 @@ export function getAssetPrice(symbol: string) {
     symbol: string;
     vwap: number;
     sources: Array<{ source: string; price: number; timestamp: string }>;
+    history?: Array<{ source: string; price: number; timestamp: string }>;
     deviation: number;
     lastUpdated: string;
   } | null>(`/assets/${symbol}/price`);
@@ -170,6 +172,61 @@ export function getAssetAlerts(symbol: string) {
     message: string;
     createdAt: string;
   }>>(`/assets/${symbol}/alerts`);
+}
+
+export interface AlertSuppressionRule {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  maintenanceMode: boolean;
+  expiresAt: string | null;
+}
+
+export function getSuppressionRules(includeExpired = false) {
+  return fetchApi<{ rules: AlertSuppressionRule[] }>(
+    `/alert-suppression/rules?includeExpired=${includeExpired ? "true" : "false"}`
+  );
+}
+
+export function toggleSuppressionRule(id: string, payload: { actor: string; isActive: boolean }) {
+  return fetchApi<{ rule: AlertSuppressionRule }>(`/alert-suppression/rules/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createMaintenanceOverride(payload: {
+  actor: string;
+  startAt: string;
+  endAt: string;
+  description?: string;
+  sources?: string[];
+  assetCodes?: string[];
+}) {
+  return fetchApi<{ rule: AlertSuppressionRule }>("/alert-suppression/maintenance/override", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function previewSuppression(payload: {
+  actor: string;
+  assetCode: string;
+  source: string;
+  alertType: "price_deviation" | "supply_mismatch" | "bridge_downtime" | "health_score_drop" | "volume_anomaly" | "reserve_ratio_breach";
+  priority: "critical" | "high" | "medium" | "low";
+}) {
+  return fetchApi<{
+    decision: {
+      suppressed: boolean;
+      matchedRule: { id: string; name: string } | null;
+      reason: string | null;
+    };
+  }>("/alert-suppression/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 // Bridges
@@ -317,4 +374,77 @@ export function getPriceFeedHealth() {
       lastSuccess: string | null;
     }>;
   }>("/price-feeds/health");
+}
+
+export interface ExternalDependencyCheck {
+  id: string;
+  providerKey: string;
+  status: "healthy" | "degraded" | "down" | "maintenance" | "unknown";
+  checkedAt: string;
+  latencyMs: number | null;
+  statusCode: number | null;
+  withinThreshold: boolean;
+  alertTriggered: boolean;
+  error: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface ExternalDependency {
+  providerKey: string;
+  displayName: string;
+  category: string;
+  endpoint: string;
+  checkType: "http" | "jsonrpc";
+  latencyWarningMs: number;
+  latencyCriticalMs: number;
+  failureThreshold: number;
+  maintenanceMode: boolean;
+  maintenanceNote: string | null;
+  status: "healthy" | "degraded" | "down" | "maintenance" | "unknown";
+  lastCheckedAt: string | null;
+  lastLatencyMs: number | null;
+  consecutiveFailures: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+  alertState: "none" | "firing" | "suppressed";
+  history?: ExternalDependencyCheck[];
+}
+
+export function getExternalDependencies(includeHistory = true, historyLimit = 8) {
+  const params = new URLSearchParams({
+    includeHistory: includeHistory ? "true" : "false",
+    historyLimit: String(historyLimit),
+  });
+
+  return fetchApi<{
+    dependencies: ExternalDependency[];
+    summary: Record<"healthy" | "degraded" | "down" | "maintenance" | "unknown", number>;
+  }>(`/external-dependencies?${params.toString()}`);
+}
+
+export interface IndexedSearchResult {
+  id: string;
+  type: "asset" | "bridge" | "incident" | "alert";
+  title: string;
+  description: string;
+  relevanceScore: number;
+  highlights: string[];
+  metadata: Record<string, unknown>;
+}
+
+export function searchIndexed(query: string, limit = 12) {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+    fuzzy: "true",
+  });
+
+  return fetchApi<{
+    success: boolean;
+    data: {
+      results: IndexedSearchResult[];
+      total: number;
+    };
+  }>(`/search?${params.toString()}`);
 }

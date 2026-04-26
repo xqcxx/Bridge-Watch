@@ -1,24 +1,31 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import ThemeProvider from "./theme/ThemeProvider";
+import { TimeRangeProvider } from "./hooks/useTimeRange";
+import { WatchlistProvider } from "./hooks/useWatchlist";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchInterval: 60_000,
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <BrowserRouter>
-          <WebSocketProvider>
+      <BrowserRouter>
+        <WatchlistProvider>
+          <TimeRangeProvider>
             <App />
-          </WebSocketProvider>
-        </BrowserRouter>
-      </ThemeProvider>
+          </TimeRangeProvider>
+        </WatchlistProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>
 );

@@ -48,10 +48,12 @@ const CATEGORY_META: Record<
 > = {
   assets: { label: "Assets", icon: "◈" },
   bridges: { label: "Bridges", icon: "⇄" },
+  incidents: { label: "Incidents", icon: "!" },
+  alerts: { label: "Alerts", icon: "^" },
   pages: { label: "Pages", icon: "⊞" },
 };
 
-const CATEGORY_ORDER: SearchCategory[] = ["assets", "bridges", "pages"];
+const CATEGORY_ORDER: SearchCategory[] = ["assets", "bridges", "incidents", "alerts", "pages"];
 
 // ─── ResultItem ───────────────────────────────────────────────────────────────
 
@@ -236,7 +238,7 @@ export function EmptyState({ query }: { query: string }) {
         No results for &ldquo;{query}&rdquo;
       </p>
       <p className="text-xs text-stellar-text-secondary mt-1">
-        Try searching for an asset symbol, bridge name, or page.
+        Try searching for an asset symbol, bridge name, incident, alert, or page.
       </p>
     </div>
   );

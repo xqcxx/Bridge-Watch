@@ -59,6 +59,7 @@ mod keys {
     pub const PRICE_HISTORY: &str = "price_history";
     pub const HEALTH_WEIGHTS: &str = "health_weights";
     pub const HEALTH_SCORE_RESULT: &str = "health_score_result";
+    pub const RISK_SCORE_CONFIG: &str = "risk_score_config";
     pub const CHECKPOINT_CONFIG: &str = "checkpoint_config";
     pub const CHECKPOINT_COUNTER: &str = "checkpoint_counter";
     pub const CHECKPOINT_METADATA_LIST: &str = "checkpoint_metadata_list";
@@ -161,6 +162,52 @@ pub struct HealthScoreResult {
     pub expires_at: u64,
 }
 
+/// Configuration for deterministic contract-side risk score calculation.
+///
+/// The three weights are expressed in basis points and must sum to exactly
+/// 10,000. `max_price_deviation_bps` and `max_volatility_bps` define the
+/// normalization ceilings for raw price and volatility inputs.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RiskScoreConfig {
+    /// Weight assigned to the inverted health signal.
+    pub health_weight_bps: u32,
+    /// Weight assigned to the price deviation signal.
+    pub price_weight_bps: u32,
+    /// Weight assigned to the volatility signal.
+    pub volatility_weight_bps: u32,
+    /// Price deviation level that maps to maximum normalized risk.
+    pub max_price_deviation_bps: u32,
+    /// Volatility level that maps to maximum normalized risk.
+    pub max_volatility_bps: u32,
+    /// Methodology version identifier for auditability.
+    pub version: u32,
+}
+
+/// Output of the deterministic risk score calculation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RiskScoreResult {
+    /// Composite risk score normalized to basis points (0–10,000).
+    pub risk_score_bps: u32,
+    /// Inverted health contribution normalized to basis points.
+    pub normalized_health_risk_bps: u32,
+    /// Price deviation contribution normalized to basis points.
+    pub normalized_price_risk_bps: u32,
+    /// Volatility contribution normalized to basis points.
+    pub normalized_volatility_risk_bps: u32,
+    /// Raw health score input (0–100).
+    pub health_score: u32,
+    /// Raw price deviation input in basis points.
+    pub price_deviation_bps: u32,
+    /// Raw volatility input in basis points.
+    pub volatility_bps: u32,
+    /// Configuration applied during the calculation.
+    pub config: RiskScoreConfig,
+    /// Ledger timestamp when the calculation was performed.
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceRecord {
@@ -207,6 +254,38 @@ pub struct DeviationThreshold {
     pub medium_bps: i128,
     /// High-severity trigger; default 1 000 bps (10 %).
     pub high_bps: i128,
+}
+
+/// Override mode for per-asset threshold changes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ThresholdOverrideMode {
+    Temporary,
+    Permanent,
+}
+
+/// Per-asset override record for deviation thresholds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviationThresholdOverride {
+    pub threshold: DeviationThreshold,
+    pub mode: ThresholdOverrideMode,
+    /// Expiration timestamp for temporary overrides. `0` for permanent.
+    pub expires_at: u64,
+    pub updated_by: Address,
+    pub updated_at: u64,
+}
+
+/// Per-asset override record for mismatch thresholds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MismatchThresholdOverride {
+    pub threshold_bps: i128,
+    pub mode: ThresholdOverrideMode,
+    /// Expiration timestamp for temporary overrides. `0` for permanent.
+    pub expires_at: u64,
+    pub updated_by: Address,
+    pub updated_at: u64,
 }
 
 /// Records a supply mismatch between Stellar and a source chain for a bridge.
@@ -533,6 +612,7 @@ pub struct CheckpointSnapshot {
     pub label: String,
     pub monitored_assets: Vec<String>,
     pub health_weights: HealthWeights,
+    pub risk_score_config: RiskScoreConfig,
     pub assets: Vec<CheckpointAssetState>,
     pub restored_from: Option<u64>,
 }
@@ -675,6 +755,8 @@ pub enum AssetDataKey {
     HealthRes(String),
     DevAlert(String),
     DevThresh(String),
+    DevThreshOvr(String),
+    MmThreshOvr(String),
     LiqDepth(String),
     LiqHist(String),
     ArchLiqHist(String),
@@ -716,6 +798,7 @@ pub enum DataKey {
     SignatureThreshold,
     LiquidityPairs,
     HealthWeights,
+    RiskScoreConfig,
     CheckpointConfig,
     CheckpointCounter,
     ChkpntMetaList,
@@ -931,10 +1014,9 @@ impl BridgeWatchContract {
             ),
         };
 
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &record,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &record);
 
         env.events()
             .publish((symbol_short!("health_up"), asset_code), health_score);
@@ -977,10 +1059,9 @@ impl BridgeWatchContract {
                 ),
             };
 
-            env.storage().persistent().set(
-                &AssetDataKey::Health(item.asset_code.clone()),
-                &record,
-            );
+            env.storage()
+                .persistent()
+                .set(&AssetDataKey::Health(item.asset_code.clone()), &record);
 
             env.events().publish(
                 (symbol_short!("health_up"), item.asset_code.clone()),
@@ -1032,10 +1113,9 @@ impl BridgeWatchContract {
             ),
         };
 
-        env.storage().persistent().set(
-            &AssetDataKey::Price(asset_code.clone()),
-            &record,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Price(asset_code.clone()), &record);
 
         let mut history: Vec<PriceRecord> = env
             .storage()
@@ -1043,10 +1123,9 @@ impl BridgeWatchContract {
             .get(&AssetDataKey::PriceHist(asset_code.clone()))
             .unwrap_or_else(|| Vec::new(&env));
         history.push_back(record.clone());
-        env.storage().persistent().set(
-            &AssetDataKey::PriceHist(asset_code.clone()),
-            &history,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::PriceHist(asset_code.clone()), &history);
 
         env.events()
             .publish((symbol_short!("price_up"), asset_code), price);
@@ -1167,8 +1246,7 @@ impl BridgeWatchContract {
         let last_nonce = env
             .storage()
             .persistent()
-            .get::<_, u64>(&ConfigDataKey::SignerNonce(signature.signer_id.clone()
-            ))
+            .get::<_, u64>(&ConfigDataKey::SignerNonce(signature.signer_id.clone()))
             .unwrap_or(0);
         if signature.nonce <= last_nonce {
             panic!("nonce replay detected");
@@ -1431,10 +1509,9 @@ impl BridgeWatchContract {
             ),
         };
 
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &status,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &status);
 
         assets.push_back(asset_code.clone());
         env.storage()
@@ -1460,10 +1537,9 @@ impl BridgeWatchContract {
         status.timestamp = env.ledger().timestamp();
         status.expires_at =
             Self::resolve_expiration(&env, &asset_code, ExpirationKind::Asset, status.timestamp);
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &status,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &status);
         env.events()
             .publish((symbol_short!("asset_pau"), asset_code), true);
         Self::maybe_create_auto_checkpoint(&env, &caller);
@@ -1483,10 +1559,9 @@ impl BridgeWatchContract {
         status.timestamp = env.ledger().timestamp();
         status.expires_at =
             Self::resolve_expiration(&env, &asset_code, ExpirationKind::Asset, status.timestamp);
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &status,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &status);
         env.events()
             .publish((symbol_short!("asset_unp"), asset_code), true);
         Self::maybe_create_auto_checkpoint(&env, &caller);
@@ -1505,10 +1580,9 @@ impl BridgeWatchContract {
         status.timestamp = env.ledger().timestamp();
         status.expires_at =
             Self::resolve_expiration(&env, &asset_code, ExpirationKind::Asset, status.timestamp);
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &status,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &status);
         env.events()
             .publish((symbol_short!("asset_del"), asset_code), false);
         Self::maybe_create_auto_checkpoint(&env, &caller);
@@ -1568,10 +1642,9 @@ impl BridgeWatchContract {
             medium_bps,
             high_bps,
         };
-        env.storage().persistent().set(
-            &AssetDataKey::DevThresh(asset_code.clone()),
-            &threshold,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::DevThresh(asset_code.clone()), &threshold);
 
         env.events()
             .publish((symbol_short!("thresh_up"), asset_code), low_bps);
@@ -1582,6 +1655,115 @@ impl BridgeWatchContract {
                 scope: String::from_str(&env, "deviation_threshold"),
                 value: high_bps,
                 timestamp: env.ledger().timestamp(),
+            },
+        );
+    }
+
+    /// Set a per-asset deviation threshold override.
+    ///
+    /// `caller` must be admin or have ACL `ManageConfig` permission.
+    /// Temporary overrides require a future `expires_at` timestamp.
+    pub fn set_deviation_threshold_override(
+        env: Env,
+        caller: Address,
+        asset_code: String,
+        low_bps: i128,
+        medium_bps: i128,
+        high_bps: i128,
+        mode: ThresholdOverrideMode,
+        expires_at: Option<u64>,
+    ) {
+        Self::assert_can_manage_threshold_overrides(&env, &caller);
+        Self::validate_deviation_threshold_range(low_bps, medium_bps, high_bps);
+
+        let now = env.ledger().timestamp();
+        let expires_at_value = Self::resolve_override_expiration(now, &mode, expires_at);
+        let key = AssetDataKey::DevThreshOvr(asset_code.clone());
+
+        let old_override: Option<DeviationThresholdOverride> = env.storage().persistent().get(&key);
+        let old_high = old_override.as_ref().map_or(0, |o| o.threshold.high_bps);
+
+        let override_entry = DeviationThresholdOverride {
+            threshold: DeviationThreshold {
+                low_bps,
+                medium_bps,
+                high_bps,
+            },
+            mode: mode.clone(),
+            expires_at: expires_at_value,
+            updated_by: caller.clone(),
+            updated_at: now,
+        };
+        env.storage().persistent().set(&key, &override_entry);
+
+        Self::append_threshold_override_audit(
+            &env,
+            Self::deviation_override_audit_name(&env, &asset_code),
+            old_high,
+            high_bps,
+            &caller,
+        );
+
+        env.events().publish(
+            (
+                symbol_short!("thr_ovr"),
+                symbol_short!("dev"),
+                asset_code.clone(),
+            ),
+            (high_bps, expires_at_value),
+        );
+        Self::emit_contract_event(
+            &env,
+            BridgeWatchEvent::ThresholdUpdated {
+                actor: caller,
+                scope: String::from_str(&env, "deviation_threshold_override"),
+                value: high_bps,
+                timestamp: now,
+            },
+        );
+    }
+
+    /// Return the active per-asset deviation threshold override, if any.
+    pub fn get_deviation_threshold_override(
+        env: Env,
+        asset_code: String,
+    ) -> Option<DeviationThresholdOverride> {
+        Self::load_active_deviation_threshold_override(&env, &asset_code)
+    }
+
+    /// Remove the per-asset deviation threshold override.
+    pub fn clear_dev_threshold_override(env: Env, caller: Address, asset_code: String) {
+        Self::assert_can_manage_threshold_overrides(&env, &caller);
+
+        let key = AssetDataKey::DevThreshOvr(asset_code.clone());
+        let old_override: Option<DeviationThresholdOverride> = env.storage().persistent().get(&key);
+        let old_high = old_override.as_ref().map_or(0, |o| o.threshold.high_bps);
+        env.storage().persistent().remove(&key);
+
+        Self::append_threshold_override_audit(
+            &env,
+            Self::deviation_override_audit_name(&env, &asset_code),
+            old_high,
+            0,
+            &caller,
+        );
+
+        let now = env.ledger().timestamp();
+        env.events().publish(
+            (
+                symbol_short!("thr_clr"),
+                symbol_short!("dev"),
+                asset_code.clone(),
+            ),
+            old_high,
+        );
+        Self::emit_contract_event(
+            &env,
+            BridgeWatchEvent::ThresholdUpdated {
+                actor: caller,
+                scope: String::from_str(&env, "deviation_threshold_override"),
+                value: 0,
+                timestamp: now,
             },
         );
     }
@@ -1617,16 +1799,7 @@ impl BridgeWatchContract {
         };
         let deviation_bps = diff * 10_000 / average_price;
 
-        let threshold: DeviationThreshold = env
-            .storage()
-            .persistent()
-            .get(&AssetDataKey::DevThresh(asset_code.clone()
-            ))
-            .unwrap_or(DeviationThreshold {
-                low_bps: 200,
-                medium_bps: 500,
-                high_bps: 1_000,
-            });
+        let threshold = Self::resolve_deviation_threshold(&env, &asset_code);
 
         let severity = if deviation_bps > threshold.high_bps {
             DeviationSeverity::High
@@ -1653,10 +1826,9 @@ impl BridgeWatchContract {
             ),
         };
 
-        env.storage().persistent().set(
-            &AssetDataKey::DevAlert(asset_code.clone()),
-            &alert,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::DevAlert(asset_code.clone()), &alert);
 
         env.events()
             .publish((symbol_short!("price_dev"), asset_code), deviation_bps);
@@ -1705,6 +1877,109 @@ impl BridgeWatchContract {
         );
     }
 
+    /// Set a per-asset mismatch threshold override in basis points.
+    ///
+    /// `caller` must be admin or have ACL `ManageConfig` permission.
+    /// Temporary overrides require a future `expires_at` timestamp.
+    pub fn set_mismatch_threshold_override(
+        env: Env,
+        caller: Address,
+        asset_code: String,
+        threshold_bps: i128,
+        mode: ThresholdOverrideMode,
+        expires_at: Option<u64>,
+    ) {
+        Self::assert_can_manage_threshold_overrides(&env, &caller);
+        Self::validate_mismatch_threshold_value(threshold_bps);
+
+        let now = env.ledger().timestamp();
+        let expires_at_value = Self::resolve_override_expiration(now, &mode, expires_at);
+        let key = AssetDataKey::MmThreshOvr(asset_code.clone());
+
+        let old_override: Option<MismatchThresholdOverride> = env.storage().persistent().get(&key);
+        let old_value = old_override.as_ref().map_or(0, |o| o.threshold_bps);
+
+        let override_entry = MismatchThresholdOverride {
+            threshold_bps,
+            mode: mode.clone(),
+            expires_at: expires_at_value,
+            updated_by: caller.clone(),
+            updated_at: now,
+        };
+        env.storage().persistent().set(&key, &override_entry);
+
+        Self::append_threshold_override_audit(
+            &env,
+            Self::mismatch_override_audit_name(&env, &asset_code),
+            old_value,
+            threshold_bps,
+            &caller,
+        );
+
+        env.events().publish(
+            (
+                symbol_short!("thr_ovr"),
+                symbol_short!("mm"),
+                asset_code.clone(),
+            ),
+            (threshold_bps, expires_at_value),
+        );
+        Self::emit_contract_event(
+            &env,
+            BridgeWatchEvent::ThresholdUpdated {
+                actor: caller,
+                scope: String::from_str(&env, "mismatch_threshold_override"),
+                value: threshold_bps,
+                timestamp: now,
+            },
+        );
+    }
+
+    /// Return the active per-asset mismatch threshold override, if any.
+    pub fn get_mismatch_threshold_override(
+        env: Env,
+        asset_code: String,
+    ) -> Option<MismatchThresholdOverride> {
+        Self::load_active_mismatch_threshold_override(&env, &asset_code)
+    }
+
+    /// Remove the per-asset mismatch threshold override.
+    pub fn clear_mm_threshold_override(env: Env, caller: Address, asset_code: String) {
+        Self::assert_can_manage_threshold_overrides(&env, &caller);
+
+        let key = AssetDataKey::MmThreshOvr(asset_code.clone());
+        let old_override: Option<MismatchThresholdOverride> = env.storage().persistent().get(&key);
+        let old_value = old_override.as_ref().map_or(0, |o| o.threshold_bps);
+        env.storage().persistent().remove(&key);
+
+        Self::append_threshold_override_audit(
+            &env,
+            Self::mismatch_override_audit_name(&env, &asset_code),
+            old_value,
+            0,
+            &caller,
+        );
+
+        let now = env.ledger().timestamp();
+        env.events().publish(
+            (
+                symbol_short!("thr_clr"),
+                symbol_short!("mm"),
+                asset_code.clone(),
+            ),
+            old_value,
+        );
+        Self::emit_contract_event(
+            &env,
+            BridgeWatchEvent::ThresholdUpdated {
+                actor: caller,
+                scope: String::from_str(&env, "mismatch_threshold_override"),
+                value: 0,
+                timestamp: now,
+            },
+        );
+    }
+
     /// Record a supply mismatch for a bridge asset (admin only).
     ///
     /// Calculates `mismatch_bps` as
@@ -1734,11 +2009,7 @@ impl BridgeWatchContract {
             0
         };
 
-        let threshold_bps: i128 = env
-            .storage()
-            .instance()
-            .get(&keys::MISMATCH_THRESHOLD)
-            .unwrap_or(10);
+        let threshold_bps = Self::resolve_mismatch_threshold_bps(&env, &asset_code);
 
         let is_critical = mismatch_bps >= threshold_bps;
 
@@ -1764,10 +2035,9 @@ impl BridgeWatchContract {
             .get(&BridgeDataKey::Mismatches(bridge_id.clone()))
             .unwrap_or_else(|| Vec::new(&env));
         mismatches.push_back(record);
-        env.storage().persistent().set(
-            &BridgeDataKey::Mismatches(bridge_id.clone()),
-            &mismatches,
-        );
+        env.storage()
+            .persistent()
+            .set(&BridgeDataKey::Mismatches(bridge_id.clone()), &mismatches);
 
         // Track bridge ID for cross-bridge queries
         let mut bridge_ids: Vec<String> = env
@@ -1901,10 +2171,9 @@ impl BridgeWatchContract {
             .get(&AssetDataKey::LiqHist(asset_pair.clone()))
             .unwrap_or_else(|| Vec::new(&env));
         history.push_back(record);
-        env.storage().persistent().set(
-            &AssetDataKey::LiqHist(asset_pair.clone()),
-            &history,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::LiqHist(asset_pair.clone()), &history);
 
         let mut pairs: Vec<String> = env
             .storage()
@@ -2209,10 +2478,9 @@ impl BridgeWatchContract {
             .get::<_, AssetHealth>(&AssetDataKey::Health(asset_code.clone()))
         {
             record.expires_at = updated_expiration(record.expires_at);
-            env.storage().persistent().set(
-                &AssetDataKey::Health(asset_code.clone()),
-                &record,
-            );
+            env.storage()
+                .persistent()
+                .set(&AssetDataKey::Health(asset_code.clone()), &record);
         }
 
         if let Some(mut record) = env
@@ -2221,36 +2489,31 @@ impl BridgeWatchContract {
             .get::<_, PriceRecord>(&AssetDataKey::Price(asset_code.clone()))
         {
             record.expires_at = updated_expiration(record.expires_at);
-            env.storage().persistent().set(
-                &AssetDataKey::Price(asset_code.clone()),
-                &record,
-            );
-        }
-
-        if let Some(mut record) =
             env.storage()
                 .persistent()
-                .get::<_, DeviationAlert>(&AssetDataKey::DevAlert(asset_code.clone()
-                ))
-        {
-            record.expires_at = updated_expiration(record.expires_at);
-            env.storage().persistent().set(
-                &AssetDataKey::DevAlert(asset_code.clone()),
-                &record,
-            );
+                .set(&AssetDataKey::Price(asset_code.clone()), &record);
         }
 
-        if let Some(mut record) =
-            env.storage()
-                .persistent()
-                .get::<_, HealthScoreResult>(&AssetDataKey::HealthRes(asset_code.clone()
-                ))
+        if let Some(mut record) = env
+            .storage()
+            .persistent()
+            .get::<_, DeviationAlert>(&AssetDataKey::DevAlert(asset_code.clone()))
         {
             record.expires_at = updated_expiration(record.expires_at);
-            env.storage().persistent().set(
-                &AssetDataKey::HealthRes(asset_code.clone()),
-                &record,
-            );
+            env.storage()
+                .persistent()
+                .set(&AssetDataKey::DevAlert(asset_code.clone()), &record);
+        }
+
+        if let Some(mut record) = env
+            .storage()
+            .persistent()
+            .get::<_, HealthScoreResult>(&AssetDataKey::HealthRes(asset_code.clone()))
+        {
+            record.expires_at = updated_expiration(record.expires_at);
+            env.storage()
+                .persistent()
+                .set(&AssetDataKey::HealthRes(asset_code.clone()), &record);
             Self::emit_contract_event(
                 &env,
                 BridgeWatchEvent::ExpirationExtended {
@@ -2314,11 +2577,10 @@ impl BridgeWatchContract {
                 }
             }
 
-            if let Some(record) =
-                env.storage()
-                    .persistent()
-                    .get::<_, DeviationAlert>(&AssetDataKey::DevAlert(asset_code.clone()
-                    ))
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<_, DeviationAlert>(&AssetDataKey::DevAlert(asset_code.clone()))
             {
                 if removed_records < max_records && Self::is_past(now, record.expires_at) {
                     env.storage()
@@ -2328,15 +2590,15 @@ impl BridgeWatchContract {
                 }
             }
 
-            if let Some(record) =
-                env.storage()
-                    .persistent()
-                    .get::<_, HealthScoreResult>(&AssetDataKey::HealthRes(asset_code.clone()
-                    ))
+            if let Some(record) = env
+                .storage()
+                .persistent()
+                .get::<_, HealthScoreResult>(&AssetDataKey::HealthRes(asset_code.clone()))
             {
                 if removed_records < max_records && Self::is_past(now, record.expires_at) {
-                    env.storage().persistent().remove(&AssetDataKey::HealthRes(asset_code.clone()
-                    ));
+                    env.storage()
+                        .persistent()
+                        .remove(&AssetDataKey::HealthRes(asset_code.clone()));
                     removed_records += 1;
                 }
             }
@@ -2397,10 +2659,9 @@ impl BridgeWatchContract {
                     }
                 }
             }
-            env.storage().persistent().set(
-                &BridgeDataKey::Mismatches(bridge_id.clone()),
-                &filtered,
-            );
+            env.storage()
+                .persistent()
+                .set(&BridgeDataKey::Mismatches(bridge_id.clone()), &filtered);
         }
 
         let pairs: Vec<String> = env
@@ -3366,10 +3627,9 @@ impl BridgeWatchContract {
             enabled,
         };
 
-        env.storage().instance().set(
-            &ConfigDataKey::RetPolicy(data_type.clone()),
-            &policy,
-        );
+        env.storage()
+            .instance()
+            .set(&ConfigDataKey::RetPolicy(data_type.clone()), &policy);
 
         env.events().publish(
             (
@@ -3484,10 +3744,9 @@ impl BridgeWatchContract {
 
             total_deleted += deleted;
             total_archived += archived;
-            env.storage().instance().set(
-                &ConfigDataKey::LastCleanup(data_type.clone()),
-                &now,
-            );
+            env.storage()
+                .instance()
+                .set(&ConfigDataKey::LastCleanup(data_type.clone()), &now);
 
             if deleted > 0 || archived > 0 {
                 env.events().publish(
@@ -3545,10 +3804,9 @@ impl BridgeWatchContract {
         let (deleted, archived) =
             Self::cleanup_data_type_internal(&env, &data_type, &policy, run_budget);
         let now = env.ledger().timestamp();
-        env.storage().instance().set(
-            &ConfigDataKey::LastCleanup(data_type.clone()),
-            &now,
-        );
+        env.storage()
+            .instance()
+            .set(&ConfigDataKey::LastCleanup(data_type.clone()), &now);
 
         if deleted > 0 || archived > 0 {
             env.events().publish(
@@ -3683,15 +3941,12 @@ impl BridgeWatchContract {
         let storage_key = ConfigDataKey::Entry(category.clone(), name.clone());
 
         // Determine previous value and compute new version
-        let (old_value, new_version) = if let Some(existing) = env
-            .storage()
-            .instance()
-            .get::<_, ConfigEntry>(&storage_key)
-        {
-            (existing.value.value, existing.version + 1)
-        } else {
-            (0_i128, 1_u32)
-        };
+        let (old_value, new_version) =
+            if let Some(existing) = env.storage().instance().get::<_, ConfigEntry>(&storage_key) {
+                (existing.value.value, existing.version + 1)
+            } else {
+                (0_i128, 1_u32)
+            };
 
         // Write updated entry
         let entry = ConfigEntry {
@@ -4040,6 +4295,203 @@ impl BridgeWatchContract {
         if !has_super && !has_required {
             panic!("unauthorized: caller does not have the required role");
         }
+    }
+
+    fn assert_can_manage_threshold_overrides(env: &Env, caller: &Address) {
+        Self::assert_not_globally_paused(env);
+        Self::check_no_pending_transfer(env);
+        let admin: Address = env.storage().instance().get(&keys::ADMIN).unwrap();
+        acl::require_permission(env, caller, &admin, &Permission::ManageConfig);
+    }
+
+    fn validate_deviation_threshold_range(low_bps: i128, medium_bps: i128, high_bps: i128) {
+        if low_bps <= 0 {
+            panic!("low_bps must be greater than zero");
+        }
+        if medium_bps <= low_bps {
+            panic!("medium_bps must be greater than low_bps");
+        }
+        if high_bps <= medium_bps {
+            panic!("high_bps must be greater than medium_bps");
+        }
+    }
+
+    fn validate_mismatch_threshold_value(threshold_bps: i128) {
+        if threshold_bps <= 0 {
+            panic!("mismatch threshold must be greater than zero");
+        }
+    }
+
+    fn resolve_override_expiration(
+        now: u64,
+        mode: &ThresholdOverrideMode,
+        expires_at: Option<u64>,
+    ) -> u64 {
+        match mode {
+            ThresholdOverrideMode::Permanent => {
+                if expires_at.is_some() {
+                    panic!("permanent override must not include expires_at");
+                }
+                0
+            }
+            ThresholdOverrideMode::Temporary => {
+                let value = expires_at.unwrap_or_else(|| {
+                    panic!("temporary override requires expires_at");
+                });
+                if value <= now {
+                    panic!("temporary override expires_at must be in the future");
+                }
+                value
+            }
+        }
+    }
+
+    fn load_active_deviation_threshold_override(
+        env: &Env,
+        asset_code: &String,
+    ) -> Option<DeviationThresholdOverride> {
+        let key = AssetDataKey::DevThreshOvr(asset_code.clone());
+        let override_entry: Option<DeviationThresholdOverride> =
+            env.storage().persistent().get(&key);
+        match override_entry {
+            Some(entry) => {
+                if entry.mode == ThresholdOverrideMode::Temporary
+                    && entry.expires_at != 0
+                    && env.ledger().timestamp() >= entry.expires_at
+                {
+                    env.storage().persistent().remove(&key);
+                    None
+                } else {
+                    Some(entry)
+                }
+            }
+            None => None,
+        }
+    }
+
+    fn load_active_mismatch_threshold_override(
+        env: &Env,
+        asset_code: &String,
+    ) -> Option<MismatchThresholdOverride> {
+        let key = AssetDataKey::MmThreshOvr(asset_code.clone());
+        let override_entry: Option<MismatchThresholdOverride> =
+            env.storage().persistent().get(&key);
+        match override_entry {
+            Some(entry) => {
+                if entry.mode == ThresholdOverrideMode::Temporary
+                    && entry.expires_at != 0
+                    && env.ledger().timestamp() >= entry.expires_at
+                {
+                    env.storage().persistent().remove(&key);
+                    None
+                } else {
+                    Some(entry)
+                }
+            }
+            None => None,
+        }
+    }
+
+    fn default_deviation_threshold() -> DeviationThreshold {
+        DeviationThreshold {
+            low_bps: 200,
+            medium_bps: 500,
+            high_bps: 1_000,
+        }
+    }
+
+    fn resolve_deviation_threshold(env: &Env, asset_code: &String) -> DeviationThreshold {
+        if let Some(override_entry) =
+            Self::load_active_deviation_threshold_override(env, asset_code)
+        {
+            return override_entry.threshold;
+        }
+
+        env.storage()
+            .persistent()
+            .get(&AssetDataKey::DevThresh(asset_code.clone()))
+            .unwrap_or_else(Self::default_deviation_threshold)
+    }
+
+    fn resolve_mismatch_threshold_bps(env: &Env, asset_code: &String) -> i128 {
+        if let Some(override_entry) = Self::load_active_mismatch_threshold_override(env, asset_code)
+        {
+            return override_entry.threshold_bps;
+        }
+
+        env.storage()
+            .instance()
+            .get(&keys::MISMATCH_THRESHOLD)
+            .unwrap_or(10)
+    }
+
+    fn append_threshold_override_audit(
+        env: &Env,
+        name: String,
+        old_value: i128,
+        new_value: i128,
+        caller: &Address,
+    ) {
+        let category = ConfigCategory::Threshold;
+        let now = env.ledger().timestamp();
+        let audit_key = ConfigDataKey::AuditLog(category, name);
+        let mut audit_log: Vec<ConfigAuditEntry> = env
+            .storage()
+            .instance()
+            .get(&audit_key)
+            .unwrap_or_else(|| Vec::new(env));
+
+        let version = if audit_log.is_empty() {
+            1u32
+        } else {
+            audit_log.get(audit_log.len() - 1).unwrap().version + 1
+        };
+
+        audit_log.push_back(ConfigAuditEntry {
+            old_value,
+            new_value,
+            version,
+            changed_at: now,
+            changed_by: caller.clone(),
+        });
+
+        while audit_log.len() > 50 {
+            let mut trimmed: Vec<ConfigAuditEntry> = Vec::new(env);
+            for i in 1..audit_log.len() {
+                trimmed.push_back(audit_log.get(i).unwrap());
+            }
+            audit_log = trimmed;
+        }
+
+        env.storage().instance().set(&audit_key, &audit_log);
+    }
+
+    fn deviation_override_audit_name(env: &Env, asset_code: &String) -> String {
+        let prefix = b"deviation_override_";
+        let asset_len = asset_code.len() as usize;
+        if asset_len > 256 {
+            panic!("asset code too long");
+        }
+
+        let total_len = prefix.len() + asset_len;
+        let mut raw = [0u8; 512];
+        raw[..prefix.len()].copy_from_slice(prefix);
+        asset_code.copy_into_slice(&mut raw[prefix.len()..total_len]);
+        String::from_bytes(env, &raw[..total_len])
+    }
+
+    fn mismatch_override_audit_name(env: &Env, asset_code: &String) -> String {
+        let prefix = b"mismatch_override_";
+        let asset_len = asset_code.len() as usize;
+        if asset_len > 256 {
+            panic!("asset code too long");
+        }
+
+        let total_len = prefix.len() + asset_len;
+        let mut raw = [0u8; 512];
+        raw[..prefix.len()].copy_from_slice(prefix);
+        asset_code.copy_into_slice(&mut raw[prefix.len()..total_len]);
+        String::from_bytes(env, &raw[..total_len])
     }
 
     /// Panic if the contract is currently globally paused.
@@ -4524,7 +4976,12 @@ impl BridgeWatchContract {
             paused: status.paused,
             active: status.active,
             timestamp,
-            expires_at: Self::resolve_expiration(&env, &asset_code, ExpirationKind::Asset, timestamp),
+            expires_at: Self::resolve_expiration(
+                &env,
+                &asset_code,
+                ExpirationKind::Asset,
+                timestamp,
+            ),
         };
 
         let result = HealthScoreResult {
@@ -4534,17 +4991,20 @@ impl BridgeWatchContract {
             bridge_uptime_score,
             weights,
             timestamp,
-            expires_at: Self::resolve_expiration(&env, &asset_code, ExpirationKind::HealthResult, timestamp),
+            expires_at: Self::resolve_expiration(
+                &env,
+                &asset_code,
+                ExpirationKind::HealthResult,
+                timestamp,
+            ),
         };
 
-        env.storage().persistent().set(
-            &AssetDataKey::Health(asset_code.clone()),
-            &record,
-        );
-        env.storage().persistent().set(
-            &AssetDataKey::HealthRes(asset_code.clone()),
-            &result,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Health(asset_code.clone()), &record);
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::HealthRes(asset_code.clone()), &result);
 
         env.events()
             .publish((symbol_short!("health_up"), asset_code), final_score);
@@ -4559,6 +5019,124 @@ impl BridgeWatchContract {
         env.storage()
             .persistent()
             .get(&AssetDataKey::HealthRes(asset_code.clone()))
+    }
+
+    /// Store configuration for deterministic risk score calculations.
+    ///
+    /// `caller` must be the contract admin or a `SuperAdmin`. The weights are
+    /// expressed in basis points and must sum to exactly 10,000.
+    pub fn set_risk_score_config(
+        env: Env,
+        caller: Address,
+        health_weight_bps: u32,
+        price_weight_bps: u32,
+        volatility_weight_bps: u32,
+        max_price_deviation_bps: u32,
+        max_volatility_bps: u32,
+        version: u32,
+    ) {
+        Self::assert_not_globally_paused(&env);
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&keys::ADMIN).unwrap();
+        Self::check_no_pending_transfer(&env);
+        let authorized =
+            caller == admin || Self::has_role_internal(&env, &caller, AdminRole::SuperAdmin);
+        if !authorized {
+            panic!("only admin or SuperAdmin can set risk score config");
+        }
+
+        Self::validate_risk_score_config(
+            health_weight_bps,
+            price_weight_bps,
+            volatility_weight_bps,
+            max_price_deviation_bps,
+            max_volatility_bps,
+            version,
+        );
+
+        let config = RiskScoreConfig {
+            health_weight_bps,
+            price_weight_bps,
+            volatility_weight_bps,
+            max_price_deviation_bps,
+            max_volatility_bps,
+            version,
+        };
+
+        env.storage()
+            .instance()
+            .set(&keys::RISK_SCORE_CONFIG, &config);
+
+        env.events()
+            .publish((symbol_short!("risk_cfg"),), version);
+        Self::maybe_create_auto_checkpoint(&env, &caller);
+    }
+
+    /// Return the active risk score calculation configuration.
+    ///
+    /// Public read access — no authorisation required. Returns the configured
+    /// values or the defaults when no custom configuration has been stored.
+    pub fn get_risk_score_config(env: Env) -> RiskScoreConfig {
+        Self::load_risk_score_config(&env)
+    }
+
+    /// Pure deterministic calculation for the composite risk score.
+    ///
+    /// The output is normalized to basis points (0–10,000) and combines:
+    /// 1. Inverted health score
+    /// 2. Price deviation
+    /// 3. Volatility
+    ///
+    /// Price and volatility inputs are clamped to the configured normalization
+    /// ceilings before the weighted average is computed.
+    pub fn calculate_risk_score(
+        env: Env,
+        health_score: u32,
+        price_deviation_bps: u32,
+        volatility_bps: u32,
+    ) -> RiskScoreResult {
+        Self::validate_score_range(health_score, "health_score");
+        Self::build_risk_score_result(
+            &env,
+            health_score,
+            price_deviation_bps,
+            volatility_bps,
+        )
+    }
+
+    /// Derive a risk score for an asset from stored health and price history.
+    ///
+    /// Public read access — no authorisation required. Returns `None` when the
+    /// asset has no stored health record.
+    pub fn get_asset_risk_score(
+        env: Env,
+        asset_code: String,
+        period: StatPeriod,
+    ) -> Option<RiskScoreResult> {
+        let health: AssetHealth = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::Health(asset_code.clone()))?;
+        let period_secs = Self::stat_period_secs(&period);
+        let prices = Self::collect_prices_for_period(&env, &asset_code, period_secs);
+        let price_deviation_bps =
+            Self::calculate_latest_price_deviation_bps(env.clone(), prices.clone());
+        let volatility_bps = if prices.len() < 2 {
+            0
+        } else {
+            Self::clamp_i128_to_u32(Self::calculate_volatility(
+                env.clone(),
+                prices,
+                period_secs,
+            ))
+        };
+
+        Some(Self::build_risk_score_result(
+            &env,
+            health.health_score,
+            price_deviation_bps,
+            volatility_bps,
+        ))
     }
 
     /// Update automatic checkpoint settings.
@@ -4677,6 +5255,7 @@ impl BridgeWatchContract {
         let current_assets = Self::load_registered_assets_raw(&env);
         let restored_assets = snapshot.monitored_assets.clone();
         let restored_weights = snapshot.health_weights.clone();
+        let restored_risk_score_config = snapshot.risk_score_config.clone();
         for asset_code in current_assets.iter() {
             if !Self::vec_contains_string(&restored_assets, &asset_code) {
                 env.storage()
@@ -4685,8 +5264,9 @@ impl BridgeWatchContract {
                 env.storage()
                     .persistent()
                     .remove(&AssetDataKey::Price(asset_code.clone()));
-                env.storage().persistent().remove(&AssetDataKey::HealthRes(asset_code.clone()
-                ));
+                env.storage()
+                    .persistent()
+                    .remove(&AssetDataKey::HealthRes(asset_code.clone()));
             }
         }
 
@@ -4696,6 +5276,9 @@ impl BridgeWatchContract {
         env.storage()
             .instance()
             .set(&keys::HEALTH_WEIGHTS, &restored_weights);
+        env.storage()
+            .instance()
+            .set(&keys::RISK_SCORE_CONFIG, &restored_risk_score_config);
 
         for asset in snapshot.assets.iter() {
             env.storage().persistent().set(
@@ -4720,8 +5303,9 @@ impl BridgeWatchContract {
                     &asset.health_result,
                 );
             } else {
-                env.storage().persistent().remove(&AssetDataKey::HealthRes(asset.asset_code.clone()
-                ));
+                env.storage()
+                    .persistent()
+                    .remove(&AssetDataKey::HealthRes(asset.asset_code.clone()));
             }
         }
 
@@ -4754,6 +5338,17 @@ impl BridgeWatchContract {
             liquidity_weight: 30,
             price_stability_weight: 40,
             bridge_uptime_weight: 30,
+            version: 1,
+        }
+    }
+
+    fn default_risk_score_config() -> RiskScoreConfig {
+        RiskScoreConfig {
+            health_weight_bps: 5_000,
+            price_weight_bps: 2_500,
+            volatility_weight_bps: 2_500,
+            max_price_deviation_bps: 2_000,
+            max_volatility_bps: 5_000,
             version: 1,
         }
     }
@@ -4844,10 +5439,9 @@ impl BridgeWatchContract {
     fn initialize_retention_policies(env: &Env) {
         for data_type in Self::retention_data_types(env).iter() {
             let policy = Self::default_retention_policy(data_type.clone());
-            env.storage().instance().set(
-                &ConfigDataKey::RetPolicy(data_type.clone()),
-                &policy,
-            );
+            env.storage()
+                .instance()
+                .set(&ConfigDataKey::RetPolicy(data_type.clone()), &policy);
             env.storage()
                 .instance()
                 .set(&ConfigDataKey::LastCleanup(data_type.clone()), &0u64);
@@ -4966,10 +5560,9 @@ impl BridgeWatchContract {
                 continue;
             }
 
-            env.storage().persistent().set(
-                &BridgeDataKey::Mismatches(bridge_id.clone()),
-                &kept,
-            );
+            env.storage()
+                .persistent()
+                .set(&BridgeDataKey::Mismatches(bridge_id.clone()), &kept);
 
             if policy.archive_before_delete {
                 let mut archived_records: Vec<SupplyMismatch> = env
@@ -4981,10 +5574,9 @@ impl BridgeWatchContract {
                     archived_records.push_back(record);
                     archived += 1;
                 }
-                env.storage().persistent().set(
-                    &BridgeDataKey::ArchMismatches(bridge_id),
-                    &archived_records,
-                );
+                env.storage()
+                    .persistent()
+                    .set(&BridgeDataKey::ArchMismatches(bridge_id), &archived_records);
             }
         }
 
@@ -5064,10 +5656,9 @@ impl BridgeWatchContract {
                     archived_history.push_back(snapshot);
                     archived += 1;
                 }
-                env.storage().persistent().set(
-                    &AssetDataKey::ArchLiqHist(pair),
-                    &archived_history,
-                );
+                env.storage()
+                    .persistent()
+                    .set(&AssetDataKey::ArchLiqHist(pair), &archived_history);
             }
         }
 
@@ -5153,10 +5744,7 @@ impl BridgeWatchContract {
             Some(code) => env
                 .storage()
                 .persistent()
-                .get(&ConfigDataKey::RetOvr(
-                    code.clone(),
-                    data_type.clone(),
-                ))
+                .get(&ConfigDataKey::RetOvr(code.clone(), data_type.clone()))
                 .unwrap_or(default_retention_secs),
             None => default_retention_secs,
         }
@@ -5185,7 +5773,12 @@ impl BridgeWatchContract {
             })
     }
 
-    fn resolve_expiration(env: &Env, _asset_code: &String, kind: ExpirationKind, timestamp: u64) -> u64 {
+    fn resolve_expiration(
+        env: &Env,
+        _asset_code: &String,
+        kind: ExpirationKind,
+        timestamp: u64,
+    ) -> u64 {
         let policy = Self::load_expiration_policy(env);
         let ttl = match kind {
             ExpirationKind::Asset => policy.asset_ttl_secs,
@@ -5200,23 +5793,70 @@ impl BridgeWatchContract {
 
     fn emit_contract_event(env: &Env, event: BridgeWatchEvent) {
         match event {
-            BridgeWatchEvent::HealthSubmitted { actor, asset_code, health_score, timestamp } => {
-                env.events().publish((symbol_short!("hlth_sub"), actor, asset_code), (health_score, timestamp));
+            BridgeWatchEvent::HealthSubmitted {
+                actor,
+                asset_code,
+                health_score,
+                timestamp,
+            } => {
+                env.events().publish(
+                    (symbol_short!("hlth_sub"), actor, asset_code),
+                    (health_score, timestamp),
+                );
             }
-            BridgeWatchEvent::ThresholdUpdated { actor, scope, value, timestamp } => {
-                env.events().publish((symbol_short!("thr_upd"), actor, scope), (value, timestamp));
+            BridgeWatchEvent::ThresholdUpdated {
+                actor,
+                scope,
+                value,
+                timestamp,
+            } => {
+                env.events()
+                    .publish((symbol_short!("thr_upd"), actor, scope), (value, timestamp));
             }
-            BridgeWatchEvent::RoleChanged { actor, target, granted, role, timestamp } => {
-                env.events().publish((symbol_short!("role_chg"), actor, target), (granted, role, timestamp));
+            BridgeWatchEvent::RoleChanged {
+                actor,
+                target,
+                granted,
+                role,
+                timestamp,
+            } => {
+                env.events().publish(
+                    (symbol_short!("role_chg"), actor, target),
+                    (granted, role, timestamp),
+                );
             }
-            BridgeWatchEvent::ExpirationPolicyUpdated { actor, scope, ttl_secs, timestamp } => {
-                env.events().publish((symbol_short!("exp_upd"), actor, scope), (ttl_secs, timestamp));
+            BridgeWatchEvent::ExpirationPolicyUpdated {
+                actor,
+                scope,
+                ttl_secs,
+                timestamp,
+            } => {
+                env.events().publish(
+                    (symbol_short!("exp_upd"), actor, scope),
+                    (ttl_secs, timestamp),
+                );
             }
-            BridgeWatchEvent::ExpirationExtended { actor, scope, expires_at, timestamp } => {
-                env.events().publish((symbol_short!("exp_ext"), actor, scope), (expires_at, timestamp));
+            BridgeWatchEvent::ExpirationExtended {
+                actor,
+                scope,
+                expires_at,
+                timestamp,
+            } => {
+                env.events().publish(
+                    (symbol_short!("exp_ext"), actor, scope),
+                    (expires_at, timestamp),
+                );
             }
-            BridgeWatchEvent::CleanupCompleted { actor, removed_records, trimmed_history_records, timestamp } => {
-                env.events().publish((symbol_short!("cleanup"), actor), (removed_records, trimmed_history_records, timestamp));
+            BridgeWatchEvent::CleanupCompleted {
+                actor,
+                removed_records,
+                trimmed_history_records,
+                timestamp,
+            } => {
+                env.events().publish(
+                    (symbol_short!("cleanup"), actor),
+                    (removed_records, trimmed_history_records, timestamp),
+                );
             }
             _ => {}
         }
@@ -5248,10 +5888,9 @@ impl BridgeWatchContract {
                 &policy,
                 policy.max_deletions_per_run,
             );
-            env.storage().instance().set(
-                &ConfigDataKey::LastCleanup(data_type.clone()),
-                &now,
-            );
+            env.storage()
+                .instance()
+                .set(&ConfigDataKey::LastCleanup(data_type.clone()), &now);
 
             if deleted > 0 || archived > 0 {
                 env.events().publish(
@@ -5394,6 +6033,7 @@ impl BridgeWatchContract {
         let created_at = env.ledger().timestamp();
         let monitored_assets = Self::load_registered_assets_raw(env);
         let health_weights = Self::load_health_weights(env);
+        let risk_score_config = Self::load_risk_score_config(env);
         let mut assets = Vec::new(env);
 
         for asset_code in monitored_assets.iter() {
@@ -5402,9 +6042,10 @@ impl BridgeWatchContract {
                 .storage()
                 .persistent()
                 .get(&AssetDataKey::Price(asset_code.clone()));
-            let health_result_opt: Option<HealthScoreResult> = env.storage().persistent().get(
-                &AssetDataKey::HealthRes(asset_code.clone()),
-            );
+            let health_result_opt: Option<HealthScoreResult> = env
+                .storage()
+                .persistent()
+                .get(&AssetDataKey::HealthRes(asset_code.clone()));
 
             let default_price = PriceRecord {
                 asset_code: asset_code.clone(),
@@ -5442,6 +6083,7 @@ impl BridgeWatchContract {
             label: label.clone(),
             monitored_assets: monitored_assets.clone(),
             health_weights,
+            risk_score_config,
             assets,
             restored_from,
         };
@@ -5459,10 +6101,9 @@ impl BridgeWatchContract {
             restored_from,
         };
 
-        env.storage().persistent().set(
-            &ConfigDataKey::ChkpntSnap(next_id),
-            &snapshot,
-        );
+        env.storage()
+            .persistent()
+            .set(&ConfigDataKey::ChkpntSnap(next_id), &snapshot);
 
         let mut metadata_list = Self::load_checkpoint_metadata(env);
         metadata_list.push_back(metadata.clone());
@@ -5521,6 +6162,12 @@ impl BridgeWatchContract {
         Self::append_u32(&mut data, snapshot.health_weights.price_stability_weight);
         Self::append_u32(&mut data, snapshot.health_weights.bridge_uptime_weight);
         Self::append_u32(&mut data, snapshot.health_weights.version);
+        Self::append_u32(&mut data, snapshot.risk_score_config.health_weight_bps);
+        Self::append_u32(&mut data, snapshot.risk_score_config.price_weight_bps);
+        Self::append_u32(&mut data, snapshot.risk_score_config.volatility_weight_bps);
+        Self::append_u32(&mut data, snapshot.risk_score_config.max_price_deviation_bps);
+        Self::append_u32(&mut data, snapshot.risk_score_config.max_volatility_bps);
+        Self::append_u32(&mut data, snapshot.risk_score_config.version);
 
         for asset_code in snapshot.monitored_assets.iter() {
             Self::append_string(&mut data, &asset_code);
@@ -5767,6 +6414,13 @@ impl BridgeWatchContract {
             })
     }
 
+    fn load_risk_score_config(env: &Env) -> RiskScoreConfig {
+        env.storage()
+            .instance()
+            .get(&keys::RISK_SCORE_CONFIG)
+            .unwrap_or_else(Self::default_risk_score_config)
+    }
+
     /// Validate that three weights are each ≤ 100 and sum to exactly 100.
     fn validate_weights(liq: u32, stab: u32, up: u32) {
         if liq > 100 || stab > 100 || up > 100 {
@@ -5784,6 +6438,34 @@ impl BridgeWatchContract {
         }
     }
 
+    fn validate_risk_score_config(
+        health_weight_bps: u32,
+        price_weight_bps: u32,
+        volatility_weight_bps: u32,
+        max_price_deviation_bps: u32,
+        max_volatility_bps: u32,
+        version: u32,
+    ) {
+        if health_weight_bps > 10_000
+            || price_weight_bps > 10_000
+            || volatility_weight_bps > 10_000
+        {
+            panic!("risk weights must be between 0 and 10000");
+        }
+        if health_weight_bps + price_weight_bps + volatility_weight_bps != 10_000 {
+            panic!("risk weights must sum to 10000");
+        }
+        if max_price_deviation_bps == 0 {
+            panic!("max_price_deviation_bps must be greater than zero");
+        }
+        if max_volatility_bps == 0 {
+            panic!("max_volatility_bps must be greater than zero");
+        }
+        if version == 0 {
+            panic!("risk score config version must be greater than 0");
+        }
+    }
+
     /// Compute the weighted-average composite score.
     ///
     /// `composite = (liq * liq_w + stab * stab_w + up * up_w) / 100`
@@ -5797,6 +6479,114 @@ impl BridgeWatchContract {
             + (price_stability_score as u64) * (weights.price_stability_weight as u64)
             + (bridge_uptime_score as u64) * (weights.bridge_uptime_weight as u64);
         (weighted_sum / 100) as u32
+    }
+
+    fn build_risk_score_result(
+        env: &Env,
+        health_score: u32,
+        price_deviation_bps: u32,
+        volatility_bps: u32,
+    ) -> RiskScoreResult {
+        let config = Self::load_risk_score_config(env);
+        let normalized_health_risk_bps = (100u32.saturating_sub(health_score)) * 100;
+        let normalized_price_risk_bps =
+            Self::normalize_signal_to_bps(price_deviation_bps, config.max_price_deviation_bps);
+        let normalized_volatility_risk_bps =
+            Self::normalize_signal_to_bps(volatility_bps, config.max_volatility_bps);
+
+        let weighted_sum = (normalized_health_risk_bps as u64)
+            * (config.health_weight_bps as u64)
+            + (normalized_price_risk_bps as u64) * (config.price_weight_bps as u64)
+            + (normalized_volatility_risk_bps as u64) * (config.volatility_weight_bps as u64);
+        let risk_score_bps = Self::clamp_bps_u64(weighted_sum / 10_000);
+
+        RiskScoreResult {
+            risk_score_bps,
+            normalized_health_risk_bps,
+            normalized_price_risk_bps,
+            normalized_volatility_risk_bps,
+            health_score,
+            price_deviation_bps,
+            volatility_bps,
+            config,
+            timestamp: env.ledger().timestamp(),
+        }
+    }
+
+    fn normalize_signal_to_bps(raw_signal_bps: u32, max_signal_bps: u32) -> u32 {
+        let clamped_signal = if raw_signal_bps > max_signal_bps {
+            max_signal_bps
+        } else {
+            raw_signal_bps
+        };
+
+        ((clamped_signal as u64) * 10_000 / (max_signal_bps as u64)) as u32
+    }
+
+    fn clamp_bps_u64(value: u64) -> u32 {
+        if value > 10_000 {
+            10_000
+        } else {
+            value as u32
+        }
+    }
+
+    fn clamp_i128_to_u32(value: i128) -> u32 {
+        if value <= 0 {
+            0
+        } else if value > u32::MAX as i128 {
+            u32::MAX
+        } else {
+            value as u32
+        }
+    }
+
+    fn stat_period_secs(period: &StatPeriod) -> u64 {
+        match period {
+            StatPeriod::Hour => 3_600,
+            StatPeriod::Day => 86_400,
+            StatPeriod::Week => 604_800,
+            StatPeriod::Month => 2_592_000,
+        }
+    }
+
+    fn collect_prices_for_period(env: &Env, asset_code: &String, period_secs: u64) -> Vec<i128> {
+        let history: Vec<PriceRecord> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::PriceHist(asset_code.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        let now = env.ledger().timestamp();
+        let start_time = now.saturating_sub(period_secs);
+        let mut prices: Vec<i128> = Vec::new(env);
+
+        for record in history.iter() {
+            if record.timestamp >= start_time && record.timestamp <= now {
+                prices.push_back(record.price);
+            }
+        }
+
+        prices
+    }
+
+    fn calculate_latest_price_deviation_bps(env: Env, prices: Vec<i128>) -> u32 {
+        if prices.is_empty() {
+            return 0;
+        }
+
+        let average_price = Self::calculate_average(env, prices.clone());
+        if average_price <= 0 {
+            return 0;
+        }
+
+        let latest_price = prices.get(prices.len() - 1).unwrap();
+        let diff = if latest_price > average_price {
+            latest_price - average_price
+        } else {
+            average_price - latest_price
+        };
+
+        Self::clamp_i128_to_u32((diff * 10_000) / average_price)
     }
 
     // -----------------------------------------------------------------------
@@ -6031,12 +6821,7 @@ impl BridgeWatchContract {
 
         // Determine time range based on period
         let now = env.ledger().timestamp();
-        let period_secs = match period {
-            StatPeriod::Hour => 3600,
-            StatPeriod::Day => 86400,
-            StatPeriod::Week => 604800,
-            StatPeriod::Month => 2592000,
-        };
+        let period_secs = Self::stat_period_secs(&period);
         let start_time = now.saturating_sub(period_secs);
 
         // Get price history for the period
@@ -6083,10 +6868,9 @@ impl BridgeWatchContract {
             .get(&AssetDataKey::Stats(asset_code.clone()))
             .unwrap_or_else(|| Vec::new(&env));
         stats_history.push_back(stats.clone());
-        env.storage().persistent().set(
-            &AssetDataKey::Stats(asset_code.clone()),
-            &stats_history,
-        );
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Stats(asset_code.clone()), &stats_history);
 
         // Emit event
         env.events().publish(
@@ -6877,6 +7661,108 @@ mod tests {
         let result = client.check_price_deviation(&asset, &1_010_000);
         assert!(result.is_some());
         assert_eq!(result.unwrap().severity, DeviationSeverity::Low);
+    }
+
+    #[test]
+    fn test_temporary_deviation_threshold_override_expires() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let asset = String::from_str(&env, "USDC");
+        let source = String::from_str(&env, "Stellar DEX");
+        let operator = Address::generate(&env);
+
+        client.acl_grant_permission(&admin, &operator, &Permission::ManageConfig, &0);
+        client.register_asset(&admin, &asset);
+        client.submit_price(&admin, &asset, &1_000_000, &source);
+
+        client.set_deviation_threshold_override(
+            &operator,
+            &asset,
+            &50,
+            &100,
+            &200,
+            &ThresholdOverrideMode::Temporary,
+            &Some(1_000_050),
+        );
+
+        let during_override = client.check_price_deviation(&asset, &1_010_000);
+        assert!(during_override.is_some());
+        assert_eq!(during_override.unwrap().severity, DeviationSeverity::Low);
+
+        env.ledger().set_timestamp(1_000_060);
+        assert!(client.get_deviation_threshold_override(&asset).is_none());
+
+        let after_expiry = client.check_price_deviation(&asset, &1_010_000);
+        assert!(after_expiry.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "unauthorized: caller lacks the required permission")]
+    fn test_threshold_override_requires_manage_config_permission() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let asset = String::from_str(&env, "USDC");
+        let operator = Address::generate(&env);
+
+        client.set_mismatch_threshold_override(
+            &operator,
+            &asset,
+            &5,
+            &ThresholdOverrideMode::Permanent,
+            &None,
+        );
+    }
+
+    #[test]
+    fn test_mismatch_threshold_override_is_applied_per_asset() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let asset = String::from_str(&env, "USDC");
+        let bridge = String::from_str(&env, "CIRCLE_USDC");
+        let operator = Address::generate(&env);
+
+        client.acl_grant_permission(&admin, &operator, &Permission::ManageConfig, &0);
+        client.set_mismatch_threshold_override(
+            &operator,
+            &asset,
+            &5,
+            &ThresholdOverrideMode::Permanent,
+            &None,
+        );
+
+        client.record_supply_mismatch(&bridge, &asset, &1_000_000, &1_001_000);
+        let m = client.get_supply_mismatches(&bridge).get(0).unwrap();
+        assert_eq!(m.mismatch_bps, 9);
+        assert!(m.is_critical);
+
+        let active_override = client.get_mismatch_threshold_override(&asset).unwrap();
+        assert_eq!(active_override.threshold_bps, 5);
+        assert_eq!(active_override.mode, ThresholdOverrideMode::Permanent);
+    }
+
+    #[test]
+    fn test_threshold_override_writes_audit_log() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+
+        let asset = String::from_str(&env, "USDC");
+        client.set_mismatch_threshold_override(
+            &admin,
+            &asset,
+            &7,
+            &ThresholdOverrideMode::Permanent,
+            &None,
+        );
+
+        let log_name = String::from_str(&env, "mismatch_override_USDC");
+        let log = client.get_config_audit_log(&ConfigCategory::Threshold, &log_name);
+        assert_eq!(log.len(), 1);
+        let entry = log.get(0).unwrap();
+        assert_eq!(entry.old_value, 0);
+        assert_eq!(entry.new_value, 7);
     }
 
     // -----------------------------------------------------------------------
@@ -8964,6 +9850,85 @@ mod tests {
         let result = client.calculate_health_score(&60, &80, &100);
         assert_eq!(result.composite_score, 74);
         assert_eq!(result.weights.version, 2);
+    }
+
+    #[test]
+    fn test_get_risk_score_config_returns_defaults() {
+        let (_env, client, _admin) = setup();
+        let config = client.get_risk_score_config();
+        assert_eq!(config.health_weight_bps, 5_000);
+        assert_eq!(config.price_weight_bps, 2_500);
+        assert_eq!(config.volatility_weight_bps, 2_500);
+        assert_eq!(config.max_price_deviation_bps, 2_000);
+        assert_eq!(config.max_volatility_bps, 5_000);
+        assert_eq!(config.version, 1);
+    }
+
+    #[test]
+    fn test_set_risk_score_config_stores_custom_values() {
+        let (_env, client, admin) = setup();
+        client.set_risk_score_config(&admin, &4_000, &3_500, &2_500, &1_500, &4_000, &2);
+
+        let config = client.get_risk_score_config();
+        assert_eq!(config.health_weight_bps, 4_000);
+        assert_eq!(config.price_weight_bps, 3_500);
+        assert_eq!(config.volatility_weight_bps, 2_500);
+        assert_eq!(config.max_price_deviation_bps, 1_500);
+        assert_eq!(config.max_volatility_bps, 4_000);
+        assert_eq!(config.version, 2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_set_risk_score_config_rejects_invalid_weight_sum() {
+        let (_env, client, admin) = setup();
+        client.set_risk_score_config(&admin, &4_000, &3_000, &2_000, &2_000, &5_000, &1);
+    }
+
+    #[test]
+    fn test_calculate_risk_score_uses_weighted_normalized_inputs() {
+        let (env, client, _admin) = setup();
+        env.ledger().set_timestamp(3_000_000);
+
+        let result = client.calculate_risk_score(&80, &500, &1_250);
+        assert_eq!(result.normalized_health_risk_bps, 2_000);
+        assert_eq!(result.normalized_price_risk_bps, 2_500);
+        assert_eq!(result.normalized_volatility_risk_bps, 2_500);
+        assert_eq!(result.risk_score_bps, 2_250);
+        assert_eq!(result.timestamp, 3_000_000);
+    }
+
+    #[test]
+    fn test_calculate_risk_score_clamps_inputs_and_output() {
+        let (_env, client, _admin) = setup();
+
+        let result = client.calculate_risk_score(&0, &50_000, &50_000);
+        assert_eq!(result.normalized_health_risk_bps, 10_000);
+        assert_eq!(result.normalized_price_risk_bps, 10_000);
+        assert_eq!(result.normalized_volatility_risk_bps, 10_000);
+        assert_eq!(result.risk_score_bps, 10_000);
+    }
+
+    #[test]
+    fn test_get_asset_risk_score_reads_stored_health_and_price_history() {
+        let (env, client, admin) = setup();
+        let asset = String::from_str(&env, "USDC");
+        let source = String::from_str(&env, "oracle");
+        client.register_asset(&admin, &asset);
+        client.submit_health(&admin, &asset, &75, &80, &75, &70);
+
+        env.ledger().set_timestamp(100);
+        client.submit_price(&admin, &asset, &1_000_000, &source);
+        env.ledger().set_timestamp(200);
+        client.submit_price(&admin, &asset, &1_000_000, &source);
+        env.ledger().set_timestamp(300);
+        client.submit_price(&admin, &asset, &1_000_000, &source);
+
+        let result = client.get_asset_risk_score(&asset, &StatPeriod::Day).unwrap();
+        assert_eq!(result.health_score, 75);
+        assert_eq!(result.price_deviation_bps, 0);
+        assert_eq!(result.volatility_bps, 0);
+        assert_eq!(result.risk_score_bps, 1_250);
     }
 
     #[test]

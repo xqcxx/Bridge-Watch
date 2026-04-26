@@ -1,0 +1,26 @@
+{
+  "USDC": {
+    "symbol": "USDC",
+    "overallScore": 92,
+    "factors": {
+      "liquidityDepth": 94,
+      "priceStability": 89,
+      "bridgeUptime": 96,
+      "reserveBacking": 93,
+      "volumeTrend": 90
+    },
+    "trend": "improving"
+  },
+  "EURC": {
+    "symbol": "EURC",
+    "overallScore": 74,
+    "factors": {
+      "liquidityDepth": 70,
+      "priceStability": 79,
+      "bridgeUptime": 72,
+      "reserveBacking": 74,
+      "volumeTrend": 75
+    },
+    "trend": "stable"
+  }
+}

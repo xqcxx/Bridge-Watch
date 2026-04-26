@@ -16,18 +16,23 @@ export default function GlobalSearch() {
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
-  // ── Global keyboard shortcut ─────────────────────────────────────────────────
+  // ── Global keyboard shortcuts ────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+K (macOS) or Ctrl+K (Windows/Linux)
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setIsOpen((prev) => !prev);
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Listen for open-search events dispatched by useKeyboardShortcuts ("/" shortcut)
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener("bridgewatch:open-search", handleOpen);
+    return () => window.removeEventListener("bridgewatch:open-search", handleOpen);
   }, []);
 
   return (

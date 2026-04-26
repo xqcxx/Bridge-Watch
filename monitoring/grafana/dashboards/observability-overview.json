@@ -1,0 +1,86 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "bridgewatch-overview",
+    "title": "Bridge Watch Observability Overview",
+    "tags": ["observability", "bridge-watch"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Availability",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+        "targets": [{ "refId": "A", "expr": "avg(up{job=\"bridge-watch-backend\"}) * 100" }],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 99 }]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "HTTP Error Rate (5xx)",
+        "type": "timeseries",
+        "gridPos": { "x": 6, "y": 0, "w": 9, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "p95 HTTP Latency",
+        "type": "timeseries",
+        "gridPos": { "x": 15, "y": 0, "w": 9, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Bridge Health Score",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+        "targets": [{ "refId": "A", "expr": "bridge_health_score", "legendFormat": "{{bridge_name}}" }]
+      },
+      {
+        "id": 5,
+        "title": "Host Resource Usage",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+        "targets": [
+          { "refId": "A", "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100", "legendFormat": "CPU {{instance}}" },
+          { "refId": "B", "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100", "legendFormat": "Memory {{instance}}" }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Uptime Probe Success",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+        "targets": [{ "refId": "A", "expr": "probe_success", "legendFormat": "{{instance}}" }]
+      },
+      {
+        "id": 7,
+        "title": "Recent Logs (Loki)",
+        "type": "logs",
+        "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+        "targets": [{ "refId": "A", "expr": "{service=~\".*\"}" }]
+      }
+    ]
+  },
+  "overwrite": true
+}
