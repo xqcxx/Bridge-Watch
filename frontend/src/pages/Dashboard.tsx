@@ -2,11 +2,14 @@ import { useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAssets } from "../hooks/useAssets";
 import { useBridges } from "../hooks/useBridges";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import HealthScoreCard from "../components/HealthScoreCard";
 import BridgeStatusCard from "../components/BridgeStatusCard";
 import AddToWatchlistButton from "../components/watchlist/AddToWatchlistButton";
 import WatchlistWidget from "../components/watchlist/WatchlistWidget";
 import ExternalDependencyPanel from "../components/dashboard/ExternalDependencyPanel";
+import PullToRefresh from "../components/PullToRefresh";
+import ComparativeSparklineGrid from "../components/analytics/ComparativeSparklineGrid";
 
 type DashboardView = "overview" | "assets" | "bridges";
 type BridgeStatusFilter = "all" | "healthy" | "degraded" | "down" | "unknown";
@@ -78,9 +81,23 @@ function useDashboardUrlState() {
 }
 
 export default function Dashboard() {
-  const { data: assetsData, isLoading: assetsLoading } = useAssets();
-  const { data: bridgesData, isLoading: bridgesLoading } = useBridges();
+  const {
+    data: assetsData,
+    isLoading: assetsLoading,
+    refetch: refetchAssets,
+  } = useAssets();
+  const {
+    data: bridgesData,
+    isLoading: bridgesLoading,
+    refetch: refetchBridges,
+  } = useBridges();
   const dashboard = useDashboardUrlState();
+  const pullToRefresh = usePullToRefresh({
+    enabled: true,
+    onRefresh: async () => {
+      await Promise.all([refetchAssets(), refetchBridges()]);
+    },
+  });
 
   const filteredBridges = useMemo(() => {
     const bridges = bridgesData?.bridges ?? [];
@@ -93,9 +110,25 @@ export default function Dashboard() {
 
   const showAssets = dashboard.state.view !== "bridges";
   const showBridges = dashboard.state.view !== "assets";
+  const sparklineItems = useMemo(
+    () =>
+      (assetsData?.assets ?? []).slice(0, 6).map((asset: { symbol: string; name?: string }) => ({
+        symbol: asset.symbol,
+        name: asset.name ?? asset.symbol,
+        period: "7d" as const,
+      })),
+    [assetsData?.assets]
+  );
 
   return (
     <div className="space-y-8">
+      <PullToRefresh
+        isPulling={pullToRefresh.isPulling}
+        pullDistance={pullToRefresh.pullDistance}
+        progress={pullToRefresh.progress}
+        isRefreshing={pullToRefresh.isRefreshing}
+      />
+
       <div className="space-y-4 rounded-2xl border border-stellar-border bg-gradient-to-br from-stellar-card via-stellar-card to-stellar-dark/40 p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -106,7 +139,16 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void pullToRefresh.refresh();
+              }}
+              className="rounded-full border border-stellar-border px-4 py-2 text-sm text-white transition-colors hover:bg-stellar-border"
+            >
+              Refresh data
+            </button>
             {dashboardViews.map((view) => (
               <button
                 key={view.id}
@@ -148,6 +190,8 @@ export default function Dashboard() {
           </select>
         </div>
       </div>
+
+      {showAssets ? <ComparativeSparklineGrid items={sparklineItems} /> : null}
 
       {showAssets ? (
         <section>

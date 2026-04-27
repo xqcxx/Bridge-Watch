@@ -7,6 +7,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import ChartTooltip from "./Tooltip/ChartTooltip.js";
 import { useMemo } from "react";
@@ -17,6 +18,7 @@ import {
   getColorblindModePreference,
   getVisualizationTheme,
 } from "../styles/colors";
+import type { ChartAnnotation } from "../hooks/useChartAnnotations";
 
 interface PriceDataPoint {
   timestamp: string;
@@ -29,6 +31,7 @@ interface PriceChartProps {
   data: PriceDataPoint[];
   isLoading: boolean;
   chartId: string;
+  annotations?: ChartAnnotation[];
 }
 
 export default function PriceChart({
@@ -36,6 +39,7 @@ export default function PriceChart({
   data,
   isLoading,
   chartId,
+  annotations = [],
 }: PriceChartProps) {
   const { getEffectiveSelection } = useTimeRange();
   const selection = getEffectiveSelection(chartId);
@@ -72,6 +76,14 @@ export default function PriceChart({
   const sources = useMemo(
     () => [...new Set(filteredData.map((entry) => entry.source))],
     [filteredData]
+  );
+
+  const annotationMarks = useMemo(
+    () =>
+      annotations.filter((annotation) =>
+        filteredData.some((entry) => entry.timestamp === annotation.timestamp)
+      ),
+    [annotations, filteredData]
   );
 
   const sourceColors = useMemo(
@@ -143,6 +155,21 @@ export default function PriceChart({
               stroke={sourceColors[source]}
               dot={false}
               strokeWidth={2}
+            />
+          ))}
+          {annotationMarks.map((annotation) => (
+            <ReferenceLine
+              key={annotation.id}
+              x={annotation.timestamp}
+              stroke={annotation.color}
+              strokeDasharray="4 4"
+              ifOverflow="extendDomain"
+              label={{
+                value: annotation.label,
+                fill: annotation.color,
+                fontSize: 11,
+                position: "top",
+              }}
             />
           ))}
         </LineChart>

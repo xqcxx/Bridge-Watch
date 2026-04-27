@@ -148,6 +148,17 @@ export interface AssetInfo {
   sourceChain?: string;
 }
 
+export interface AssetMetadata {
+  id: string;
+  asset_id: string;
+  symbol: string;
+  category: string | null;
+  tags: string[];
+  description?: string | null;
+  updated_at?: string;
+  version?: number;
+}
+
 export interface PriceSource {
   source: string;
   price: number;

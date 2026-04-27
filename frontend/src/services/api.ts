@@ -1,6 +1,7 @@
 import type {
   ApiKeyRecord,
   Asset,
+  AssetMetadata,
   AssetInfo,
   AssetWithHealth,
   Bridge,
@@ -122,6 +123,26 @@ export function getAssetPrice(symbol: string) {
 
 export function getAssetInfo(symbol: string) {
   return fetchApi<AssetInfo | null>(`/assets/${symbol}/info`);
+}
+
+export function getAssetMetadataBySymbol(symbol: string) {
+  return fetchApi<AssetMetadata>(`/metadata/symbol/${symbol}`);
+}
+
+export function upsertAssetMetadata(payload: {
+  assetId: string;
+  symbol: string;
+  metadata: {
+    category?: string | null;
+    tags?: string[];
+    description?: string | null;
+  };
+  updatedBy: string;
+}) {
+  return fetchApi<AssetMetadata>("/metadata", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getAssetPriceHistory(symbol: string, timeframe: string) {
