@@ -15,6 +15,14 @@ import { runAuditRetentionJob } from "../jobs/auditRetention.job.js";
 export async function initJobSystem() {
   const jobQueue = JobQueue.getInstance();
 
+  // Run price cache warmup on startup
+  try {
+    logger.info("Running startup price cache warmup");
+    await runPriceCacheWarmup();
+  } catch (error) {
+    logger.error({ error }, "Startup price cache warmup failed, continuing with job initialization");
+  }
+
   // Initialize worker with processor
   jobQueue.initWorker(async (job: Job) => {
     switch (job.name) {
